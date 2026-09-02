@@ -255,6 +255,19 @@
 
   .hidden{display:none !important;}
 
+  .report-type-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;max-width:640px;}
+  .report-type-card{background:var(--surface);border:1.5px solid var(--line);border-radius:var(--radius);padding:24px 20px;cursor:pointer;transition:border-color .15s,box-shadow .15s;text-align:center;}
+  .report-type-card:hover{border-color:var(--accent);box-shadow:0 4px 16px rgba(23,35,59,.08);}
+  .report-type-icon{font-size:30px;margin-bottom:10px;}
+  .report-type-title{font-family:'Heebo',sans-serif;font-weight:700;font-size:15.5px;color:var(--ink);margin-bottom:6px;}
+  .report-type-desc{font-size:12.5px;color:var(--ink-soft);line-height:1.6;}
+
+  .checklist-topic{border-top:1px solid var(--line);padding:12px 0;}
+  .checklist-topic:first-child{border-top:none;padding-top:0;}
+  .checklist-topic-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;}
+  .checklist-topic-name{font-weight:700;font-size:14px;color:var(--ink);}
+  .only-safety{display:none;}
+
   #login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;}
   #login-screen .login-card{background:#fff;border-radius:var(--radius);box-shadow:0 10px 40px rgba(23,35,59,.12);padding:36px 32px;width:100%;max-width:360px;}
   #login-screen h1{font-family:'Rubik',sans-serif;font-size:19px;margin:0 0 4px;color:var(--ink);}
@@ -297,7 +310,7 @@
   <nav class="sidebar-nav">
     <button class="side-link" id="nav-dashboard" onclick="showDashboardScreen()"><span class="side-icon">▦</span><span>לוח בקרה</span></button>
     <button class="side-link" id="nav-projects" onclick="showHistoryScreen()"><span class="side-icon">🗀</span><span>פרויקטים</span></button>
-    <button class="side-link" id="nav-editor" onclick="startNewReport()"><span class="side-icon">🗎</span><span>דוח חדש</span></button>
+    <button class="side-link" id="nav-editor" onclick="showNewReportTypeScreen()"><span class="side-icon">🗎</span><span>דוח חדש</span></button>
     <button class="side-link" id="nav-trash" onclick="showTrashScreen()"><span class="side-icon">🗑</span><span>סל מחזור</span></button>
   </nav>
   <div style="padding:14px 16px;border-top:1px solid var(--line);">
@@ -351,10 +364,28 @@
     <div class="recent-card">
       <div class="recent-head">
         <h3>דוחות אחרונים</h3>
-        <div class="recent-new" onclick="startNewReport()">דוח חדש ＋</div>
+        <div class="recent-new" onclick="showNewReportTypeScreen()">דוח חדש ＋</div>
       </div>
       <div id="dashboard-recent-list"></div>
       <div id="dashboard-recent-empty" class="empty hidden">אין עדיין דוחות שמורים.</div>
+    </div>
+  </div>
+
+  <!-- SCREEN: NEW REPORT TYPE CHOOSER -->
+  <div id="screen-new-type" class="hidden">
+    <h2 style="margin:6px 0 4px;">דוח חדש</h2>
+    <p class="helptext" style="margin-bottom:20px;">בחרו את סוג הדוח שברצונכם ליצור.</p>
+    <div class="report-type-grid">
+      <div class="report-type-card" onclick="startNewReport('general')">
+        <div class="report-type-icon">🗎</div>
+        <div class="report-type-title">דוח סיור כללי</div>
+        <div class="report-type-desc">דוח פיקוח / פרוטוקול ישיבה — פורמט חופשי עם ליקויים, סיכום ומסקנות.</div>
+      </div>
+      <div class="report-type-card" onclick="startNewReport('safety')">
+        <div class="report-type-icon">🦺</div>
+        <div class="report-type-title">דוח סיור בטיחות</div>
+        <div class="report-type-desc">סיור מהיר לפי רשימת נושאי בטיחות קבועה — מוסיפים ליקוי רק היכן שנמצאה בעיה.</div>
+      </div>
     </div>
   </div>
 
@@ -387,7 +418,7 @@
         <h3 style="margin:0 0 4px;">פרטי הדוח</h3>
         <p class="helptext" style="margin-bottom:14px;">ממלאים פעם אחת בתחילת הדוח. ניתן לערוך בהמשך.</p>
 
-        <div class="field">
+        <div class="field only-general">
           <label>כותרת הדוח</label>
           <input type="text" id="p-title" placeholder="לדוגמה: דוח ליקויי פיקוח / פרוטוקול ישיבה">
         </div>
@@ -395,24 +426,28 @@
           <label>פרויקט</label>
           <input type="text" id="p-projectName" placeholder="שם האתר / הפרויקט">
         </div>
-        <div class="field">
+        <div class="field only-safety">
+          <label>קבלן</label>
+          <input type="text" id="p-contractor" placeholder="שם הקבלן">
+        </div>
+        <div class="field only-general">
           <label>סוג פגישה</label>
           <input type="text" id="p-meetingType" placeholder="לדוגמה: סיור פיקוח שוטף / ישיבת תיאום">
         </div>
         <div class="field">
-          <label>תאריך הפגישה / הסיור</label>
-          <div class="row" style="margin-bottom:10px;">
+          <label id="meeting-date-field-label">תאריך הפגישה / הסיור</label>
+          <div class="row only-general" style="margin-bottom:10px;">
             <button type="button" class="toggle-btn" id="meeting-label-btn-meeting" onclick="setMeetingDateLabel('תאריך הפגישה')">תאריך הפגישה</button>
             <button type="button" class="toggle-btn" id="meeting-label-btn-tour" onclick="setMeetingDateLabel('תאריך הסיור')">תאריך הסיור</button>
           </div>
           <input type="date" id="p-meetingDate">
           <div class="helptext" id="meeting-date-preview">אפשר להשאיר ריק — במקרה כזה השדה לא יופיע בדף השער.</div>
         </div>
-        <div class="field">
+        <div class="field only-general">
           <label>מקום פגישה</label>
           <input type="text" id="p-meetingLocation" placeholder="לדוגמה: משרד האתר / קומה 3">
         </div>
-        <div class="field">
+        <div class="field only-general">
           <label>מועד הפצה</label>
           <input type="date" id="p-distributionDate">
           <div class="helptext" id="distribution-date-preview"></div>
@@ -421,7 +456,7 @@
           <label>הכותב</label>
           <input type="text" id="p-author" placeholder="שם מלא">
         </div>
-        <div class="field" style="margin-bottom:0;">
+        <div class="field only-general" style="margin-bottom:0;">
           <label>סטטוס הדוח</label>
           <select class="status-select" id="p-status" onchange="onStatusChange()">
             <option value="draft">טיוטה</option>
@@ -431,21 +466,23 @@
       </div>
 
       <div class="card">
-        <h3 style="margin:0 0 4px;">נוכחים</h3>
-        <p class="helptext" style="margin-bottom:14px;">רשימת המשתתפים והעתקים שיופיעו בדף השער.</p>
-        <div class="field">
-          <label>משתתפים</label>
-          <div class="chip-input-row">
-            <input type="text" id="participant-name-input" placeholder="שם המשתתף" style="flex:1.3;">
-            <input type="text" id="participant-role-input" placeholder="תפקיד / חברה" style="flex:1;">
-            <button class="btn btn-ghost btn-sm" onclick="addParticipant()">＋</button>
+        <div class="only-general">
+          <h3 style="margin:0 0 4px;">נוכחים</h3>
+          <p class="helptext" style="margin-bottom:14px;">רשימת המשתתפים והעתקים שיופיעו בדף השער.</p>
+          <div class="field">
+            <label>משתתפים</label>
+            <div class="chip-input-row">
+              <input type="text" id="participant-name-input" placeholder="שם המשתתף" style="flex:1.3;">
+              <input type="text" id="participant-role-input" placeholder="תפקיד / חברה" style="flex:1;">
+              <button class="btn btn-ghost btn-sm" onclick="addParticipant()">＋</button>
+            </div>
+            <div class="chips" id="participants-list"></div>
           </div>
-          <div class="chips" id="participants-list"></div>
-        </div>
 
-        <div class="field">
-          <label>העתקים (כל נמען בשורה חדשה)</label>
-          <textarea id="p-copies" placeholder="לדוגמה:&#10;שי לוי - קבלן&#10;אביב רון - נתיבי ישראל"></textarea>
+          <div class="field">
+            <label>העתקים (כל נמען בשורה חדשה)</label>
+            <textarea id="p-copies" placeholder="לדוגמה:&#10;שי לוי - קבלן&#10;אביב רון - נתיבי ישראל"></textarea>
+          </div>
         </div>
 
         <div class="field">
@@ -497,9 +534,14 @@
 
   <!-- TAB: DEFECTS -->
   <div id="screen-defects" class="tab-panel hidden">
-    <button class="btn btn-primary btn-block" onclick="addDefect()" style="margin-bottom:16px;">＋ הוסף ליקוי</button>
-    <div id="defect-list"></div>
-    <div id="empty-state" class="empty hidden">עדיין לא נוספו ליקויים.<br>לחצו על "הוסף ליקוי" כדי להתחיל.</div>
+    <div id="defects-general-view">
+      <button class="btn btn-primary btn-block" onclick="addDefect()" style="margin-bottom:16px;">＋ הוסף ליקוי</button>
+      <div id="defect-list"></div>
+      <div id="empty-state" class="empty hidden">עדיין לא נוספו ליקויים.<br>לחצו על "הוסף ליקוי" כדי להתחיל.</div>
+    </div>
+    <div id="defects-checklist-view" class="hidden">
+      <div id="checklist-container"></div>
+    </div>
   </div>
 
   <!-- TAB: SUMMARY / CONCLUSIONS -->
@@ -592,6 +634,7 @@ let currentFolderId = null; // history screen: null = root view, otherwise the o
 function emptyProject(){
   return { title:'', projectName:'', meetingType:'', meetingLocation:'', meetingDate:'', meetingDateLabel:'תאריך הפגישה', distributionDate:'', author:'',
            status:'draft',
+           reportType:'general', contractor:'',
            participants:[], copies:'',
            photoSizeMm: 55,
            generalEnabled: true, generalBullets: [], generalSummaryEnabled: true,
@@ -611,8 +654,18 @@ function normalizeProjectLogos(project){
   }
   return project;
 }
-function emptyState(){
-  return { id: uid(), project: emptyProject(), defects: [], folderId: null };
+function emptyState(reportType){
+  const project = emptyProject();
+  if(reportType === 'safety'){
+    project.reportType = 'safety';
+    project.meetingDateLabel = 'תאריך הסיור';
+    // The safety format (per spec) has no free-text "כללי" page and no separate "סיכום ומסקנות" page —
+    // just cover + auto summary table + defect details. The summary-table flags stay at their default
+    // (true), so buildGeneralPage() still renders the table itself.
+    project.generalEnabled = false;
+    project.conclusionsEnabled = false;
+  }
+  return { id: uid(), project, defects: [], folderId: null };
 }
 let state = emptyState();
 let activeDefectIdForUpload = null;
@@ -868,7 +921,7 @@ function handleSignOut(){
 }
 
 function wireStaticEventListeners(){
-  ['p-title','p-projectName','p-meetingType','p-meetingLocation','p-meetingDate','p-distributionDate','p-author','p-copies','p-photoSize'].forEach(id=>{
+  ['p-title','p-projectName','p-contractor','p-meetingType','p-meetingLocation','p-meetingDate','p-distributionDate','p-author','p-copies','p-photoSize'].forEach(id=>{
     document.getElementById(id).addEventListener('input', onProjectFieldInput);
   });
   document.getElementById('p-meetingDate').addEventListener('change', onProjectFieldInput);
@@ -907,6 +960,7 @@ function wireStaticEventListeners(){
 function fillProjectInputs(){
   document.getElementById('p-title').value = state.project.title || '';
   document.getElementById('p-projectName').value = state.project.projectName || '';
+  document.getElementById('p-contractor').value = state.project.contractor || '';
   document.getElementById('p-meetingType').value = state.project.meetingType || '';
   document.getElementById('p-meetingLocation').value = state.project.meetingLocation || '';
   document.getElementById('p-meetingDate').value = state.project.meetingDate || '';
@@ -926,10 +980,31 @@ function fillProjectInputs(){
   updateDistributionPreview();
   renderGeneralBullets();
   renderConclusionsBullets();
+  applyReportTypeVisibility();
+}
+// Toggles cover-tab fields, tab bar buttons, and the "ליקויים" tab's inner view between the general
+// report's free-form layout and the safety report's fixed checklist — driven by state.project.reportType.
+function applyReportTypeVisibility(){
+  const isSafety = state.project.reportType === 'safety';
+  document.querySelectorAll('.only-general').forEach(el=> el.classList.toggle('hidden', isSafety));
+  document.querySelectorAll('.only-safety').forEach(el=> el.classList.toggle('hidden', !isSafety));
+  const dateLbl = document.getElementById('meeting-date-field-label');
+  if(dateLbl) dateLbl.textContent = isSafety ? 'תאריך הסיור' : 'תאריך הפגישה / הסיור';
+  const tabGeneral = document.querySelector('.tab-btn[data-tab="general"]');
+  const tabSummary = document.querySelector('.tab-btn[data-tab="summary"]');
+  const tabDefects = document.querySelector('.tab-btn[data-tab="defects"]');
+  if(tabGeneral) tabGeneral.classList.toggle('hidden', isSafety);
+  if(tabSummary) tabSummary.classList.toggle('hidden', isSafety);
+  if(tabDefects) tabDefects.textContent = isSafety ? 'בדיקת בטיחות' : 'ליקויים';
+  const generalView = document.getElementById('defects-general-view');
+  const checklistView = document.getElementById('defects-checklist-view');
+  if(generalView) generalView.classList.toggle('hidden', isSafety);
+  if(checklistView) checklistView.classList.toggle('hidden', !isSafety);
 }
 function onProjectFieldInput(){
   state.project.title = document.getElementById('p-title').value;
   state.project.projectName = document.getElementById('p-projectName').value;
+  state.project.contractor = document.getElementById('p-contractor').value;
   state.project.meetingType = document.getElementById('p-meetingType').value;
   state.project.meetingLocation = document.getElementById('p-meetingLocation').value;
   state.project.meetingDate = document.getElementById('p-meetingDate').value;
@@ -1134,6 +1209,7 @@ function toast(msg){
 /* ================= NAVIGATION ================= */
 function hideAllScreens(){
   document.getElementById('screen-dashboard').classList.add('hidden');
+  document.getElementById('screen-new-type').classList.add('hidden');
   document.getElementById('screen-editor').classList.add('hidden');
   document.getElementById('screen-history').classList.add('hidden');
   document.getElementById('screen-trash').classList.add('hidden');
@@ -1170,15 +1246,23 @@ function showEditorTab(tabName){
     document.getElementById(panelId).classList.toggle('hidden', name!==tabName);
   });
   document.querySelectorAll('.tab-btn').forEach(b=> b.classList.toggle('active', b.dataset.tab===tabName));
-  if(tabName==='defects') renderDefects();
+  applyReportTypeVisibility();
+  if(tabName==='defects'){
+    if(state.project.reportType==='safety') renderChecklist(); else renderDefects();
+  }
   if(tabName==='export') updateExportCount();
 }
 function updateExportCount(){
   const el = document.getElementById('export-count-text');
   if(el) el.textContent = state.defects.length + ' ליקויים בדוח';
 }
-function startNewReport(){
-  state = emptyState();
+function showNewReportTypeScreen(){
+  hideAllScreens();
+  document.getElementById('screen-new-type').classList.remove('hidden');
+  document.getElementById('nav-editor').classList.add('active');
+}
+function startNewReport(reportType){
+  state = emptyState(reportType);
   saveDraft();
   fillProjectInputs();
   renderLogoPreview();
@@ -1186,7 +1270,7 @@ function startNewReport(){
   openEditor('cover');
   toast('נפתח דוח חדש');
 }
-function resetAll(){ startNewReport(); }
+function resetAll(){ showNewReportTypeScreen(); }
 function goToDefects(){ showEditorTab('defects'); }
 function editProject(){ showEditorTab('cover'); }
 
@@ -1316,19 +1400,21 @@ function permanentlyDeleteReport(id){
 
 function histItemHtml(item, mode){
   const p = item.project || {};
-  const title = (p.title||'').trim() || 'ללא כותרת';
+  const isSafety = p.reportType === 'safety';
+  const title = (p.title||'').trim() || (isSafety ? 'דוח סיור בטיחות' : 'ללא כותרת');
   const proj = (p.projectName||'').trim() || 'ללא שם פרויקט';
   const dt = item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('he-IL') : '';
   const n = (item.defects||[]).length;
   const isActive = item.id === state.id;
   const inFolder = mode === 'folder';
   const inTrash = mode === 'trash';
+  const typeBadge = isSafety ? '<span style="background:#FDEFE2;color:#C9750B;font-size:10.5px;font-weight:700;border-radius:20px;padding:2px 8px;margin-inline-start:6px;white-space:nowrap;">בטיחות</span>' : '';
   return `
     <div class="hist-item" id="hist-${item.id}" data-report-id="${item.id}">
       <div style="display:flex;align-items:flex-start;">
         ${inTrash ? '' : `<div class="hist-drag-handle" data-report-id="${item.id}" title="גררו לתיקייה">⠿</div>`}
         <div style="flex:1;min-width:0;">
-          <div class="htitle">${escapeHtml(title)} ${isActive?'<span style="color:var(--accent);font-size:11px;">(פתוח כעת)</span>':''}</div>
+          <div class="htitle">${escapeHtml(title)}${typeBadge} ${isActive?'<span style="color:var(--accent);font-size:11px;">(פתוח כעת)</span>':''}</div>
           <div class="hsub">${escapeHtml(proj)}</div>
           <div class="hmeta">${n} ליקויים · עודכן לאחרונה: ${dt}</div>
         </div>
@@ -1620,6 +1706,153 @@ function renderDefectHeadOnly(id){
   }
 }
 
+/* ================= SAFETY CHECKLIST (דוח סיור בטיחות) =================
+   Fixed categories/topics per the safety-tour spec. Safety-report defects live in the SAME
+   state.defects array as general-report defects (reusing saving, cloud sync, image upload/Storage,
+   PDF/Word export image handling, etc. unchanged) — each just carries an extra topicId/topicLabel. */
+const SAFETY_CHECKLIST = [
+  { id:'general-site', label:'א. התארגנות ובטיחות כללית באתר', topics:[
+    {id:'fencing', label:'גידור ושילוט'},
+    {id:'cleanliness', label:'סדר, ניקיון ופינוי פסולת'},
+    {id:'access', label:'דרכי גישה ומעברים'},
+    {id:'storage', label:'אחסון חומרים ומניעת נפילת חפצים'},
+    {id:'welfare', label:'מבני שירות ורווחת עובדים'},
+    {id:'firstaid', label:'עזרה ראשונה'},
+  ]},
+  { id:'infra', label:'ב. עבודות תשתית וחפירות', topics:[
+    {id:'excavation', label:'חפירות, תעלות ויציבות'},
+    {id:'nearby-infra', label:'עבודות בקרבת תשתיות קיימות'},
+    {id:'wet-areas', label:'עבודות בסביבה רטובה / מים'},
+  ]},
+  { id:'equipment', label:'ג. כלי עבודה, צמ"ה והרמות', topics:[
+    {id:'tools', label:'כלי עבודה וצמ"ה'},
+    {id:'lifting', label:'עבודות הרמה ואביזרי הרמה'},
+  ]},
+  { id:'electric-fire', label:'ד. חשמל ואש', topics:[
+    {id:'electric', label:'חשמל ותשתיות חשמל'},
+    {id:'fire', label:'אש, עבודות חמות וכיבוי אש'},
+  ]},
+  { id:'workers', label:'ה. עובדים ותנאי עבודה', topics:[
+    {id:'ppe', label:'ציוד מגן אישי'},
+    {id:'lighting', label:'תאורה ועבודות לילה'},
+  ]},
+  { id:'traffic', label:'ו. הסדרי תנועה', topics:[
+    {id:'signage', label:'תמרורים'},
+    {id:'paint-marking', label:'סימוני צבע'},
+    {id:'railings', label:'מעקות'},
+  ]},
+  { id:'misc', label:'ז. שונות', topics:[
+    {id:'general-misc', label:'כללי / שונות'},
+  ]},
+];
+
+function addChecklistDefect(topicId, topicLabel){
+  state.defects.forEach(d=>d.open=false);
+  const d = { id:uid(), topicId: topicId||null, topicLabel: topicLabel||'', location:'', description:'', images:[], open:true };
+  state.defects.push(d);
+  saveDraft(); renderChecklist();
+  setTimeout(()=>{ const el=document.getElementById('cl-card-'+d.id); if(el) el.scrollIntoView({behavior:'smooth', block:'center'}); },60);
+}
+function removeChecklistDefect(id){
+  if(!confirm('למחוק את הליקוי? הפעולה אינה הפיכה.')) return;
+  state.defects = state.defects.filter(d=>d.id!==id);
+  saveDraft(); renderChecklist();
+}
+function toggleChecklistDefect(id){
+  const d = state.defects.find(x=>x.id===id); if(!d) return;
+  d.open = !d.open; renderChecklist();
+}
+function updateChecklistDefectField(id, field, value){
+  const d = state.defects.find(x=>x.id===id); if(!d) return;
+  d[field] = value; saveDraft();
+  if(field==='location' || field==='topicLabel') renderChecklistHeadOnly(id);
+}
+function renderChecklistHeadOnly(id){
+  const d = state.defects.find(x=>x.id===id); if(!d) return;
+  const loc = document.querySelector('#cl-card-'+id+' .loc');
+  const cnt = document.querySelector('#cl-card-'+id+' .meta-count');
+  const top = document.querySelector('#cl-card-'+id+' .meta-topic');
+  if(loc) loc.textContent = d.location.trim() || 'ליקוי ללא מיקום מוגדר';
+  if(cnt) cnt.textContent = d.images.length + ' תמונות';
+  if(top) top.textContent = d.topicLabel || 'ליקוי נוסף';
+}
+function checklistDefectCardHtml(d, idx){
+  const locLabel = d.location.trim() || 'ליקוי ללא מיקום מוגדר';
+  const imgsHtml = d.images.map((src,ii)=>`
+    <div class="thumb"><img src="${src}"><div class="rm" onclick="event.stopPropagation();removeImage('${d.id}',${ii})">×</div></div>`).join('');
+  const topicRowHtml = d.topicId
+    ? `<div class="field"><label>נושא</label><input type="text" value="${escapeAttr(d.topicLabel||'')}" disabled></div>`
+    : `<div class="field"><label>נושא</label><input type="text" placeholder="לדוגמה: ריסוס יתושים" value="${escapeAttr(d.topicLabel||'')}" oninput="updateChecklistDefectField('${d.id}','topicLabel',this.value)"></div>`;
+  return `
+    <div class="defect ${d.open?'open':''}" id="cl-card-${d.id}">
+      <div class="defect-head" onclick="toggleChecklistDefect('${d.id}')">
+        <div class="badge">${idx}</div>
+        <div class="title">
+          <div class="loc">${escapeHtml(locLabel)}</div>
+          <div class="meta"><span class="meta-count">${d.images.length} תמונות</span> · <span class="meta-topic">${escapeHtml(d.topicLabel || 'ליקוי נוסף')}</span></div>
+        </div>
+        <div class="chev">▾</div>
+      </div>
+      <div class="defect-body">
+        ${topicRowHtml}
+        <div class="field">
+          <label>מיקום</label>
+          <input type="text" placeholder="לדוגמה: כניסה לאתר" value="${escapeAttr(d.location)}" oninput="updateChecklistDefectField('${d.id}','location',this.value)">
+        </div>
+        <div class="field">
+          <label>תיאור הליקוי</label>
+          <textarea oninput="updateChecklistDefectField('${d.id}','description',this.value)">${escapeHtml(d.description)}</textarea>
+        </div>
+        <label>תמונות תיעוד</label>
+        <div class="imgs">
+          ${imgsHtml}
+          <div class="add-photo" onclick="triggerUpload('${d.id}','camera')">📷<span>מצלמה</span></div>
+          <div class="add-photo" onclick="triggerUpload('${d.id}','gallery')">🖼<span>גלריה</span></div>
+        </div>
+        <div class="defect-actions"><button class="btn btn-danger-ghost btn-sm" onclick="removeChecklistDefect('${d.id}')">🗑 מחיקת ליקוי</button></div>
+      </div>
+    </div>`;
+}
+function renderChecklist(){
+  stopDictation();
+  const container = document.getElementById('checklist-container');
+  if(!container) return;
+
+  const globalIndex = {};
+  state.defects.forEach((d,i)=>{ globalIndex[d.id] = i+1; });
+
+  const byTopic = {};
+  state.defects.forEach(d=>{ const key = d.topicId || '__custom__'; (byTopic[key]=byTopic[key]||[]).push(d); });
+
+  let html = '';
+  SAFETY_CHECKLIST.forEach(cat=>{
+    html += `<div class="card"><h3 style="margin:0 0 4px;">${escapeHtml(cat.label)}</h3>`;
+    cat.topics.forEach(topic=>{
+      const items = byTopic[topic.id] || [];
+      html += `
+        <div class="checklist-topic">
+          <div class="checklist-topic-row">
+            <span class="checklist-topic-name">${escapeHtml(topic.label)}</span>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="addChecklistDefect('${topic.id}','${escapeAttr(topic.label)}')">＋ הוסף ליקוי</button>
+          </div>
+          ${items.map(d=>checklistDefectCardHtml(d, globalIndex[d.id])).join('')}
+        </div>`;
+    });
+    html += `</div>`;
+  });
+
+  const customItems = byTopic['__custom__'] || [];
+  html += `
+    <div class="card">
+      <h3 style="margin:0 0 10px;">ליקויים נוספים</h3>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addChecklistDefect(null,'')" style="margin-bottom:10px;">＋ ליקוי נוסף</button>
+      ${customItems.map(d=>checklistDefectCardHtml(d, globalIndex[d.id])).join('')}
+    </div>`;
+
+  container.innerHTML = html;
+  updateExportCount();
+}
+
 /* ================= VOICE DICTATION FOR DEFECT DESCRIPTION ================= */
 // Uses the browser's built-in speech recognition (Web Speech API) — no server round-trip, no extra
 // libraries. Typing remains fully available at all times; this only offers an additional way to fill
@@ -1699,6 +1932,9 @@ function triggerUpload(id, mode){
   const input = document.getElementById(mode==='camera' ? 'file-input-camera' : 'file-input-gallery');
   input.value = ''; input.click();
 }
+function renderCurrentDefectsView(){
+  if(state.project.reportType === 'safety') renderChecklist(); else renderDefects();
+}
 async function handleFiles(e){
   const files = Array.from(e.target.files || []);
   if(!files.length || !activeDefectIdForUpload) return;
@@ -1710,14 +1946,14 @@ async function handleFiles(e){
       if(!multiple) toast('מעלה תמונה...');
       const url = await compressImage(f, d.id);
       d.images.push(url);
-      renderDefects();
+      renderCurrentDefectsView();
     }catch(err){ console.error(err); toast('שגיאה בהעלאת תמונה — בדקו את החיבור לאינטרנט'); }
   }
   saveDraft();
 }
 function removeImage(id, idx){
   const d = state.defects.find(x=>x.id===id); if(!d) return;
-  d.images.splice(idx,1); saveDraft(); renderDefects();
+  d.images.splice(idx,1); saveDraft(); renderCurrentDefectsView();
 }
 async function compressImage(file, defectId){
   const { blob } = await resizeImageToBlob(file, { maxDim:1500, mimeType:'image/jpeg', quality:0.72 });
@@ -1998,7 +2234,8 @@ async function exportPDF(){
   await new Promise(r=>setTimeout(r,50));
   try{
     const doc = await buildPdfDocument();
-    const titleForName = (state.project.title || 'דוח').trim();
+    const defaultTitle = state.project.reportType==='safety' ? 'דוח_סיור_בטיחות' : 'דוח';
+    const titleForName = (state.project.title || defaultTitle).trim();
     const filename = `${titleForName}_${(state.project.projectName||'פרויקט').replace(/[^\wא-ת\- ]/g,'').trim().replace(/\s+/g,'_')}_${todayStr()}.pdf`;
     doc.save(filename);
     toast('קובץ ה-PDF נוצר בהצלחה');
@@ -2043,7 +2280,36 @@ function pageShell(){
   return div;
 }
 
+function buildSafetyCoverPage(){
+  const div = pageShell();
+  const mm2px = PDF_PAGE_W / MM_W;
+  const contentW = PDF_PAGE_W - 100;
+  const textIndentPx = Math.round(20 * mm2px);
+  const textWidthPx = contentW - textIndentPx;
+
+  const titleHtml = `<div style="text-align:center;margin-bottom:32px;margin-top:40px;">
+    <div style="font-family:'Heebo',sans-serif;font-weight:800;font-size:23px;line-height:1.1;display:inline-block;padding-bottom:0px;border-bottom:1.5px solid #000000;">דוח סיור בטיחות</div>
+  </div>`;
+
+  const rows = [];
+  if(state.project.projectName.trim()) rows.push(['פרויקט', escapeHtml(state.project.projectName.trim())]);
+  if(state.project.contractor && state.project.contractor.trim()) rows.push(['קבלן', escapeHtml(state.project.contractor.trim())]);
+  { const line = chosenMeetingDateLine(); if(line) rows.push(['תאריך סיור', escapeHtml(line)]); }
+  if(state.project.author.trim()) rows.push(['כותב הדוח', escapeHtml(state.project.author.trim())]);
+
+  const infoTableHtml = `<table style="width:${textWidthPx}px;margin:0 ${textIndentPx}px 22px 0;border-collapse:collapse;">
+    ${rows.map(([label,val])=>`
+      <tr>
+        <td style="white-space:nowrap;text-align:right;font-weight:700;color:#1B2430;padding:9px 12px 9px 32px;font-size:13.5px;vertical-align:top;width:1%;">${label}:</td>
+        <td style="text-align:right;padding:9px 0;font-size:13.5px;color:#1B2430;vertical-align:top;word-break:break-word;overflow-wrap:break-word;">${val}</td>
+      </tr>`).join('')}
+  </table>`;
+
+  div.innerHTML = `${titleHtml}${infoTableHtml}`;
+  return div;
+}
 function buildCoverPage(){
+  if(state.project.reportType === 'safety') return buildSafetyCoverPage();
   const div = pageShell();
   const mm2px = PDF_PAGE_W / MM_W;
   const contentW = PDF_PAGE_W - 100; // pageShell horizontal padding is 50px each side
@@ -2140,9 +2406,12 @@ function buildGeneralPage(){
   if(showSummaryCount){
     countCaptionHtml = `<div class="pdf-avoid-break pdf-text-block" style="font-size:12px;color:#5D6773;margin:0 0 10px;">סה״כ ליקויים שתועדו: ${state.defects.length}</div>`;
 
+    const isSafety = state.project.reportType === 'safety';
+    const topicHeaderCell = isSafety ? `<th style="padding:9px 8px;font-weight:700;font-size:12px;text-align:right;width:110px;">נושא</th>` : '';
     const rows = state.defects.map((d,i)=>`
       <tr style="background:${i%2? '#FAF9F6':'#ffffff'};">
         <td style="padding:10px 6px;text-align:center;font-weight:700;border-bottom:1px solid #E4E1D9;width:46px;white-space:nowrap;">${i+1}</td>
+        ${isSafety? `<td style="padding:10px 8px;text-align:right;border-bottom:1px solid #E4E1D9;width:110px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(d.topicLabel||'—')}</td>` : ''}
         <td style="padding:10px 8px;text-align:right;border-bottom:1px solid #E4E1D9;width:135px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(d.location.trim()||'—')}</td>
         <td style="padding:10px 8px;text-align:right;border-bottom:1px solid #E4E1D9;font-size:12.5px;line-height:1.5;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(d.description.trim()||'—')}</td>
         <td style="padding:10px 8px;text-align:center;border-bottom:1px solid #E4E1D9;width:55px;">${d.images.length}</td>
@@ -2152,6 +2421,7 @@ function buildGeneralPage(){
       <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">
         <thead><tr style="background:${headerColor};color:#fff;">
           <th style="padding:9px 6px;font-weight:700;font-size:12px;text-align:center;width:46px;white-space:nowrap;">מס"ד</th>
+          ${topicHeaderCell}
           <th style="padding:9px 8px;font-weight:700;font-size:12px;text-align:right;width:135px;">מיקום</th>
           <th style="padding:9px 8px;font-weight:700;font-size:12px;text-align:right;">תיאור הליקוי</th>
           <th style="padding:9px 8px;font-weight:700;font-size:12px;text-align:center;width:55px;">תמונות</th>
@@ -2227,11 +2497,15 @@ function imageGridHtml(imgs){
 
 async function buildDefectContentHtml(d, idx, total){
   const imgsHtml = imageGridHtml(d.images);
+  const isSafety = state.project.reportType === 'safety';
+  const headerLine = isSafety
+    ? `ליקוי ${String(idx).padStart(2,'0')}${d.topicLabel ? ' – ' + escapeHtml(d.topicLabel) : ''}`
+    : `ליקוי מס׳ ${idx} מתוך ${total}`;
   return `
     <div class="pdf-avoid-break">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
         <div style="background:#1B2430;color:#fff;font-family:'Heebo',sans-serif;font-weight:800;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">${idx}</div>
-        <div class="pdf-text-block" style="font-family:'Heebo',sans-serif;font-weight:700;font-size:15px;">ליקוי מס׳ ${idx} מתוך ${total}</div>
+        <div class="pdf-text-block" style="font-family:'Heebo',sans-serif;font-weight:700;font-size:15px;">${headerLine}</div>
       </div>
       <div class="pdf-text-block" style="margin-bottom:10px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
         <div><span style="color:#5D6773;">מיקום: </span><b>${escapeHtml(d.location.trim()||'—')}</b></div>
@@ -2580,18 +2854,23 @@ async function exportWord(){
     }
 
     const children = [];
+    const isSafetyDoc = state.project.reportType === 'safety';
     if(state.project.title.trim()){
       children.push(rtlP({ alignment:AlignmentType.CENTER, heading:HeadingLevel.TITLE, children:[ rtlR({ text: state.project.title.trim(), bold:true }) ] }));
+      children.push(rtlP({ text:'' }));
+    }else if(isSafetyDoc){
+      children.push(rtlP({ alignment:AlignmentType.CENTER, heading:HeadingLevel.TITLE, children:[ rtlR({ text:'דוח סיור בטיחות', bold:true }) ] }));
       children.push(rtlP({ text:'' }));
     }
 
     const infoRows = [];
     if(state.project.projectName.trim()) infoRows.push(['פרויקט', state.project.projectName.trim()]);
-    if(state.project.meetingType.trim()) infoRows.push(['סוג פגישה', state.project.meetingType.trim()]);
+    if(isSafetyDoc && state.project.contractor && state.project.contractor.trim()) infoRows.push(['קבלן', state.project.contractor.trim()]);
+    if(!isSafetyDoc && state.project.meetingType.trim()) infoRows.push(['סוג פגישה', state.project.meetingType.trim()]);
     { const line = chosenMeetingDateLine(); if(line) infoRows.push([state.project.meetingDateLabel || 'תאריך הפגישה', line]); }
-    if(state.project.meetingLocation.trim()) infoRows.push(['מקום פגישה', state.project.meetingLocation.trim()]);
-    { const distLine = distributionDateLine(); if(distLine) infoRows.push(['מועד הפצה', distLine]); }
-    if(state.project.author.trim()) infoRows.push(['הכותב', state.project.author.trim()]);
+    if(!isSafetyDoc && state.project.meetingLocation.trim()) infoRows.push(['מקום פגישה', state.project.meetingLocation.trim()]);
+    if(!isSafetyDoc){ const distLine = distributionDateLine(); if(distLine) infoRows.push(['מועד הפצה', distLine]); }
+    if(state.project.author.trim()) infoRows.push([isSafetyDoc ? 'כותב הדוח' : 'הכותב', state.project.author.trim()]);
 
     children.push(new Table({
       width:{ size:100, type:WidthType.PERCENTAGE },
@@ -2659,19 +2938,24 @@ async function exportWord(){
       }
       if(showSummaryCount){
         children.push(rtlP({ alignment:AlignmentType.START, children:[ rtlR({ text:`סה״כ ליקויים שתועדו: ${state.defects.length}` }) ] }));
+        const headerCells = [headerCell('מס"ד')];
+        if(isSafetyDoc) headerCells.push(headerCell('נושא'));
+        headerCells.push(headerCell('מיקום'), headerCell('תיאור הליקוי'), headerCell('תמונות'));
         children.push(new Table({
           width:{ size:100, type:WidthType.PERCENTAGE },
           visuallyRightToLeft: true,
           rows:[
-            new TableRow({ children:[ headerCell('מס"ד'), headerCell('מיקום'), headerCell('תיאור הליקוי'), headerCell('תמונות') ] }),
+            new TableRow({ children: headerCells }),
             ...state.defects.map((d,i)=>{
               const shadeHex = i%2 ? 'FAF9F6' : undefined;
-              return new TableRow({ children:[
-                bodyCell(String(i+1), AlignmentType.CENTER, shadeHex),
+              const rowCells = [bodyCell(String(i+1), AlignmentType.CENTER, shadeHex)];
+              if(isSafetyDoc) rowCells.push(bodyCell(d.topicLabel||'—', AlignmentType.START, shadeHex));
+              rowCells.push(
                 bodyCell(d.location.trim()||'—', AlignmentType.START, shadeHex),
                 bodyCell(d.description.trim()||'—', AlignmentType.START, shadeHex),
-                bodyCell(String(d.images.length), AlignmentType.CENTER, shadeHex),
-              ] });
+                bodyCell(String(d.images.length), AlignmentType.CENTER, shadeHex)
+              );
+              return new TableRow({ children: rowCells });
             })
           ]
         }));
@@ -2685,7 +2969,10 @@ async function exportWord(){
       // naturally. keepNext below asks Word to keep each defect's own heading/location/description
       // together as a unit rather than splitting them across a break.
       if(i>0) children.push(rtlP({ text:'' }));
-      children.push(rtlP({ alignment:AlignmentType.START, heading:HeadingLevel.HEADING_1, keepNext:true, children:[ rtlR({ text:`ליקוי מס' ${i+1} מתוך ${state.defects.length}`, bold:true }) ] }));
+      const defectHeading = isSafetyDoc
+        ? `ליקוי ${String(i+1).padStart(2,'0')}${d.topicLabel ? ' – ' + d.topicLabel : ''}`
+        : `ליקוי מס' ${i+1} מתוך ${state.defects.length}`;
+      children.push(rtlP({ alignment:AlignmentType.START, heading:HeadingLevel.HEADING_1, keepNext:true, children:[ rtlR({ text: defectHeading, bold:true }) ] }));
       {
         const st = d.status || 'not_relevant';
         const sv = d.severity || 'not_relevant';

@@ -406,6 +406,19 @@
   <!-- TAB: COVER PAGE -->
   <div id="screen-project" class="tab-panel">
     <div class="editor-grid">
+      <div class="card only-general">
+        <h3 style="margin:0 0 4px;">פרופיל פרויקט</h3>
+        <p class="helptext" style="margin-bottom:14px;">שומרים פרטים שחוזרים על עצמם (פרויקט, סוג פגישה, מקום, כותב, משתתפים, העתקים) פעם אחת, וטוענים אותם בלחיצה אחת לכל דוח חדש.</p>
+        <div class="field" style="margin-bottom:10px;">
+          <label>פרופיל שמור</label>
+          <div class="row">
+            <select id="profile-select" style="flex:1;"></select>
+            <button class="btn btn-ghost btn-sm" onclick="applySelectedProfile()">טעינה</button>
+            <button class="btn btn-danger-ghost btn-sm" onclick="deleteSelectedProfile()">מחיקה</button>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-block" onclick="saveCurrentAsProfile()" style="margin-bottom:0;">💾 שמירת הפרטים הנוכחיים כפרופיל חדש</button>
+      </div>
       <div class="card">
         <h3 style="margin:0 0 4px;">פרטי הדוח</h3>
         <p class="helptext" style="margin-bottom:14px;">ממלאים פעם אחת בתחילת הדוח. ניתן לערוך בהמשך.</p>
@@ -560,7 +573,10 @@
       <div class="row">
         <button class="btn btn-ghost" onclick="previewPDF()">🔍 תצוגה מקדימה</button>
         <button class="btn btn-dark" onclick="exportPDF()">📄 הפקת PDF</button>
+        <button class="btn btn-ghost" onclick="exportWord()">📝 ייצוא Word</button>
+        <button class="btn btn-ghost" onclick="sharePDF()">📤 שיתוף (וואטסאפ / מייל)</button>
       </div>
+      <p class="helptext" style="margin-top:10px;margin-bottom:0;">שיתוף פותח את תפריט השיתוף הרגיל של המכשיר — עובד הכי טוב בטלפון.</p>
     </div>
     <div class="card hidden" id="pdf-preview-container">
       <h3 style="margin:0 0 12px;">תצוגה מקדימה</h3>
@@ -750,6 +766,105 @@ async function loadHistoryFromCloud(){
   return hist;
 }
 
+/* ================= PROJECT PROFILES (saved cover-page presets) =================
+   A small, separate table/cache from `reports` — profiles are named presets of the repeatable cover
+   fields (title, project, meeting type/location, author, participants, distribution list) that get
+   applied on top of the currently-open report's project object with one click. */
+const PROFILES_TABLE = 'project_profiles';
+let _profilesCache = {};
+async function loadProfilesFromCloud(){
+  const user = _currentUser;
+  if(!user) return {};
+  const map = {};
+  const { data, error } = await supabaseClient.from(PROFILES_TABLE).select('*').eq('owner_uid', user.id);
+  if(error) throw error;
+  (data || []).forEach(row=>{ map[row.id] = { id: row.id, name: row.name, data: row.data || {}, updatedAt: row.updated_at }; });
+  return map;
+}
+async function pushProfileToCloud(id){
+  const user = _currentUser;
+  const p = _profilesCache[id];
+  if(!user || !p) return;
+  try{
+    const { error } = await supabaseClient.from(PROFILES_TABLE).upsert({
+      id, owner_uid: user.id, name: p.name, data: p.data, updated_at: p.updatedAt || Date.now()
+    });
+    if(error) throw error;
+  }catch(err){
+    console.error('profile sync failed', err);
+    toast('שגיאה בשמירת הפרופיל לענן — בדקו את החיבור לאינטרנט');
+  }
+}
+async function deleteProfileFromCloud(id){
+  const user = _currentUser;
+  if(!user) return;
+  try{
+    const { error } = await supabaseClient.from(PROFILES_TABLE).delete().eq('id', id);
+    if(error) throw error;
+  }catch(err){
+    console.error('profile delete failed', err);
+    toast('שגיאה במחיקת הפרופיל מהענן — בדקו את החיבור לאינטרנט');
+  }
+}
+function renderProfileSelect(){
+  const sel = document.getElementById('profile-select');
+  if(!sel) return;
+  const current = sel.value;
+  const profiles = Object.values(_profilesCache).sort((a,b)=> (a.name||'').localeCompare(b.name||'', 'he'));
+  sel.innerHTML = '<option value="">— בחרו פרופיל —</option>' + profiles.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+  if(profiles.some(p=>p.id===current)) sel.value = current;
+}
+function applySelectedProfile(){
+  const sel = document.getElementById('profile-select');
+  const id = sel && sel.value;
+  if(!id){ toast('בחרו פרופיל מהרשימה'); return; }
+  const p = _profilesCache[id];
+  if(!p) return;
+  const d = p.data || {};
+  state.project.title = d.title || '';
+  state.project.projectName = d.projectName || '';
+  state.project.meetingType = d.meetingType || '';
+  state.project.meetingLocation = d.meetingLocation || '';
+  state.project.author = d.author || '';
+  state.project.participants = Array.isArray(d.participants) ? d.participants.map(x=>({ name:x.name||'', role:x.role||'' })) : [];
+  state.project.copies = d.copies || '';
+  saveDraft();
+  fillProjectInputs();
+  renderParticipants();
+  toast(`הפרופיל "${p.name}" נטען`);
+}
+function saveCurrentAsProfile(){
+  const name = (prompt('שם לפרופיל (לדוגמה: "כביש 6 - נתיבי ישראל"):', state.project.projectName || '') || '').trim();
+  if(!name) return;
+  const id = uid();
+  const data = {
+    title: state.project.title || '',
+    projectName: state.project.projectName || '',
+    meetingType: state.project.meetingType || '',
+    meetingLocation: state.project.meetingLocation || '',
+    author: state.project.author || '',
+    participants: (state.project.participants||[]).map(x=>({ name:x.name||'', role:x.role||'' })),
+    copies: state.project.copies || ''
+  };
+  _profilesCache[id] = { id, name, data, updatedAt: Date.now() };
+  pushProfileToCloud(id);
+  renderProfileSelect();
+  const sel = document.getElementById('profile-select'); if(sel) sel.value = id;
+  toast('הפרופיל נשמר');
+}
+function deleteSelectedProfile(){
+  const sel = document.getElementById('profile-select');
+  const id = sel && sel.value;
+  if(!id){ toast('בחרו פרופיל למחיקה'); return; }
+  const p = _profilesCache[id];
+  if(!p) return;
+  if(!confirm(`למחוק את הפרופיל "${p.name}"? הפעולה אינה הפיכה.`)) return;
+  delete _profilesCache[id];
+  deleteProfileFromCloud(id);
+  renderProfileSelect();
+  toast('הפרופיל נמחק');
+}
+
 function saveDraft(){
   const hist = loadHistory();
   hist[state.id] = { id: state.id, project: state.project, defects: state.defects, folderId: state.folderId || null, updatedAt: Date.now() };
@@ -828,6 +943,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
     }else{
       _appInitializedForUid = null;
       _historyCache = {};
+      _profilesCache = {};
       state = emptyState();
       appRoot.classList.add('hidden');
       loginScreen.classList.remove('hidden');
@@ -846,6 +962,13 @@ async function initAppDataForUser(){
   }
   if(Object.keys(hist).length===0){ hist = migrateOldDraftIfNeeded(hist); }
   _historyCache = hist;
+
+  try{
+    _profilesCache = await loadProfilesFromCloud();
+  }catch(err){
+    console.error(err);
+    _profilesCache = {};
+  }
 
   const currentId = localStorage.getItem(CURRENT_KEY);
   if(currentId && hist[currentId]){
@@ -963,6 +1086,7 @@ function fillProjectInputs(){
   updateDistributionPreview();
   renderGeneralBullets();
   renderConclusionsBullets();
+  renderProfileSelect();
   applyReportTypeVisibility();
 }
 // Toggles cover-tab fields, tab bar buttons, and the "ליקויים" tab's inner view between the general
@@ -2216,6 +2340,11 @@ function pdfExportGuard(){
   return true;
 }
 
+function buildPdfFilename(){
+  const defaultTitle = state.project.reportType==='safety' ? 'דוח_סיור_בטיחות' : 'דוח';
+  const titleForName = (state.project.title || defaultTitle).trim();
+  return `${titleForName}_${(state.project.projectName||'פרויקט').replace(/[^\wא-ת\- ]/g,'').trim().replace(/\s+/g,'_')}_${todayStr()}.pdf`;
+}
 async function exportPDF(){
   if(!pdfExportGuard()) return;
   document.getElementById('overlay-text').textContent = 'מייצר PDF…';
@@ -2223,13 +2352,38 @@ async function exportPDF(){
   await new Promise(r=>setTimeout(r,50));
   try{
     const doc = await buildPdfDocument();
-    const defaultTitle = state.project.reportType==='safety' ? 'דוח_סיור_בטיחות' : 'דוח';
-    const titleForName = (state.project.title || defaultTitle).trim();
-    const filename = `${titleForName}_${(state.project.projectName||'פרויקט').replace(/[^\wא-ת\- ]/g,'').trim().replace(/\s+/g,'_')}_${todayStr()}.pdf`;
-    doc.save(filename);
+    doc.save(buildPdfFilename());
     toast('קובץ ה-PDF נוצר בהצלחה');
   }catch(err){
     console.error(err); toast('שגיאה ביצירת ה-PDF, נסו שוב');
+  }finally{
+    document.getElementById('pdf-overlay').classList.remove('show');
+  }
+}
+// Shares the PDF via the device's native share sheet (WhatsApp, Gmail, Outlook, Messages, etc.) —
+// no server, no account, no per-app integration. Falls back to a plain download with an explanation
+// on browsers/devices that don't support sharing files this way (mainly desktop browsers other than
+// recent Chrome/Edge — this is a browser capability, not something the app can add on its own).
+async function sharePDF(){
+  if(!pdfExportGuard()) return;
+  document.getElementById('overlay-text').textContent = 'מכין קובץ לשיתוף…';
+  document.getElementById('pdf-overlay').classList.add('show');
+  await new Promise(r=>setTimeout(r,50));
+  try{
+    const doc = await buildPdfDocument();
+    const filename = buildPdfFilename();
+    const blob = doc.output('blob');
+    const file = new File([blob], filename, { type:'application/pdf' });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      document.getElementById('pdf-overlay').classList.remove('show');
+      await navigator.share({ files:[file], title: filename });
+    }else{
+      doc.save(filename);
+      toast('שיתוף קבצים לא נתמך בדפדפן הזה — הקובץ הורד; אפשר לצרף אותו ידנית בוואטסאפ/במייל');
+    }
+  }catch(err){
+    if(err && err.name === 'AbortError'){ /* user cancelled the share sheet — not an error */ }
+    else{ console.error(err); toast('שגיאה בשיתוף הקובץ, נסו שוב'); }
   }finally{
     document.getElementById('pdf-overlay').classList.remove('show');
   }

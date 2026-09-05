@@ -987,12 +987,16 @@ function switchProjectSubTab(key){
 }
 
 /* ---- CONTACTS tab ---- */
+let editingContactId = null; // when set, that contact's row in the table becomes an inline edit form
 function contactsTabHtml(projectId){
   const catTabsHtml = CONTACT_CATEGORIES.map(cat=>
     `<button class="btn btn-sm ${currentContactCategory===cat.key?'btn-dark':'btn-ghost'}" onclick="switchContactCategory('${projectId}','${cat.key}')">${cat.label}</button>`
   ).join('');
   const contacts = sortContacts(contactsForProject(projectId, currentContactCategory), currentContactSort);
-  const rows = contacts.map(c=>`
+  const sortArrow = (col)=> currentContactSort===col ? ' ▲' : '';
+  const rows = contacts.map(c=>{
+    if(c.id === editingContactId) return contactEditRowHtml(projectId, c);
+    return `
     <tr>
       <td>${escapeHtml(c.role||'—')}</td>
       <td>${escapeHtml(c.company||'—')}</td>
@@ -1004,7 +1008,8 @@ function contactsTabHtml(projectId){
         <button class="btn btn-ghost btn-sm" onclick="editContactPrompt('${c.id}')">עריכה</button>
         <button class="btn btn-danger-ghost btn-sm" onclick="deleteContact('${c.id}')">מחיקה</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   const catLabel = (CONTACT_CATEGORIES.find(c=>c.key===currentContactCategory)||{}).label || '';
   return `
     <div class="card">
@@ -1012,11 +1017,6 @@ function contactsTabHtml(projectId){
       <div class="row" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <h3 style="margin:0;">${escapeHtml(catLabel)} (${contacts.length})</h3>
         <div class="row" style="gap:8px;flex-wrap:wrap;">
-          <select id="contact-sort-select" onchange="onContactSortChange(this.value)" style="width:auto;">
-            <option value="name" ${currentContactSort==='name'?'selected':''}>מיון: איש קשר (א-ב)</option>
-            <option value="role" ${currentContactSort==='role'?'selected':''}>מיון: תפקיד</option>
-            <option value="company" ${currentContactSort==='company'?'selected':''}>מיון: חברה</option>
-          </select>
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('contacts-xlsx-input').click()">📥 ייבוא מאקסל</button>
           <button class="btn btn-primary btn-sm" onclick="openAddContactForm('${projectId}')">＋ הוסף איש קשר</button>
         </div>
@@ -1027,7 +1027,12 @@ function contactsTabHtml(projectId){
       ${contacts.length ? `
       <div style="overflow-x:auto;">
         <table class="simple-table">
-          <thead><tr><th>תפקיד</th><th>חברה</th><th>איש קשר</th><th>טלפון משרד</th><th>טלפון נייד</th><th>דוא"ל</th><th></th></tr></thead>
+          <thead><tr>
+            <th style="cursor:pointer;user-select:none;" onclick="onContactSortChange('role')" title="מיון לפי תפקיד">תפקיד${sortArrow('role')}</th>
+            <th style="cursor:pointer;user-select:none;" onclick="onContactSortChange('company')" title="מיון לפי חברה">חברה${sortArrow('company')}</th>
+            <th style="cursor:pointer;user-select:none;" onclick="onContactSortChange('name')" title="מיון לפי איש קשר">איש קשר${sortArrow('name')}</th>
+            <th>טלפון משרד</th><th>טלפון נייד</th><th>דוא"ל</th><th></th>
+          </tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>` : `<div class="empty">אין עדיין אנשי קשר תחת "${escapeHtml(catLabel)}" בפרויקט זה.</div>`}
@@ -1036,37 +1041,62 @@ function contactsTabHtml(projectId){
 }
 function switchContactCategory(projectId, categoryKey){
   currentContactCategory = categoryKey;
+  editingContactId = null;
   renderHistoryList();
 }
-function onContactSortChange(val){
-  currentContactSort = val;
+function onContactSortChange(col){
+  currentContactSort = col;
   renderHistoryList();
 }
-function openAddContactForm(projectId, existingId){
-  const editing = existingId ? _contactsCache[existingId] : null;
+function contactEditRowHtml(projectId, editing){
+  return `
+    <tr>
+      <td colspan="7" style="background:#FAF9F6;">
+        <div class="editor-grid" style="grid-template-columns:1fr 1fr;margin:10px 0;">
+          <div class="field"><label>קטגוריה</label>
+            <select id="cf-category">${CONTACT_CATEGORIES.map(cat=>`<option value="${cat.key}" ${editing.category===cat.key?'selected':''}>${cat.label}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>תפקיד</label><input type="text" id="cf-role" value="${escapeAttr(editing.role)}"></div>
+          <div class="field"><label>שם חברה</label><input type="text" id="cf-company" value="${escapeAttr(editing.company)}"></div>
+          <div class="field"><label>איש קשר (שם)</label><input type="text" id="cf-name" value="${escapeAttr(editing.name)}"></div>
+          <div class="field"><label>טלפון משרד</label><input type="text" id="cf-phone-office" value="${escapeAttr(editing.phoneOffice)}"></div>
+          <div class="field"><label>טלפון נייד</label><input type="text" id="cf-phone-mobile" value="${escapeAttr(editing.phoneMobile)}"></div>
+          <div class="field"><label>דוא"ל</label><input type="email" id="cf-email" value="${escapeAttr(editing.email)}"></div>
+        </div>
+        <div class="row" style="margin-bottom:10px;">
+          <button class="btn btn-primary btn-sm" onclick="submitContactForm('${projectId}','${editing.id}')">שמירה</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelEditContact()">ביטול</button>
+        </div>
+      </td>
+    </tr>`;
+}
+function openAddContactForm(projectId){
+  editingContactId = null;
+  renderHistoryList();
   const slot = document.getElementById('contact-add-form-slot');
   if(!slot) return;
   slot.innerHTML = `
     <div class="card" style="background:#FAF9F6;margin-bottom:14px;">
-      <h3 style="margin:0 0 10px;font-size:14px;">${editing?'עריכת איש קשר':'איש קשר חדש'}</h3>
+      <h3 style="margin:0 0 10px;font-size:14px;">איש קשר חדש</h3>
       <div class="editor-grid" style="grid-template-columns:1fr 1fr;">
         <div class="field"><label>קטגוריה</label>
-          <select id="cf-category">${CONTACT_CATEGORIES.map(cat=>`<option value="${cat.key}" ${(editing?editing.category:currentContactCategory)===cat.key?'selected':''}>${cat.label}</option>`).join('')}</select>
+          <select id="cf-category">${CONTACT_CATEGORIES.map(cat=>`<option value="${cat.key}" ${currentContactCategory===cat.key?'selected':''}>${cat.label}</option>`).join('')}</select>
         </div>
-        <div class="field"><label>תפקיד</label><input type="text" id="cf-role" value="${editing?escapeAttr(editing.role):''}"></div>
-        <div class="field"><label>שם חברה</label><input type="text" id="cf-company" value="${editing?escapeAttr(editing.company):''}"></div>
-        <div class="field"><label>איש קשר (שם)</label><input type="text" id="cf-name" value="${editing?escapeAttr(editing.name):''}"></div>
-        <div class="field"><label>טלפון משרד</label><input type="text" id="cf-phone-office" value="${editing?escapeAttr(editing.phoneOffice):''}"></div>
-        <div class="field"><label>טלפון נייד</label><input type="text" id="cf-phone-mobile" value="${editing?escapeAttr(editing.phoneMobile):''}"></div>
-        <div class="field"><label>דוא"ל</label><input type="email" id="cf-email" value="${editing?escapeAttr(editing.email):''}"></div>
+        <div class="field"><label>תפקיד</label><input type="text" id="cf-role"></div>
+        <div class="field"><label>שם חברה</label><input type="text" id="cf-company"></div>
+        <div class="field"><label>איש קשר (שם)</label><input type="text" id="cf-name"></div>
+        <div class="field"><label>טלפון משרד</label><input type="text" id="cf-phone-office"></div>
+        <div class="field"><label>טלפון נייד</label><input type="text" id="cf-phone-mobile"></div>
+        <div class="field"><label>דוא"ל</label><input type="email" id="cf-email"></div>
       </div>
       <div class="row">
-        <button class="btn btn-primary btn-sm" onclick="submitContactForm('${projectId}','${editing?editing.id:''}')">שמירה</button>
+        <button class="btn btn-primary btn-sm" onclick="submitContactForm('${projectId}','')">שמירה</button>
         <button class="btn btn-ghost btn-sm" onclick="closeContactForm()">ביטול</button>
       </div>
     </div>`;
 }
 function closeContactForm(){ const slot=document.getElementById('contact-add-form-slot'); if(slot) slot.innerHTML=''; }
+function cancelEditContact(){ editingContactId = null; renderHistoryList(); }
 function submitContactForm(projectId, existingId){
   const name = document.getElementById('cf-name').value.trim();
   if(!name){ toast('נא להזין שם איש קשר'); return; }
@@ -1082,19 +1112,21 @@ function submitContactForm(projectId, existingId){
     email: document.getElementById('cf-email').value.trim(),
   };
   pushContactToCloud(id);
-  closeContactForm();
+  editingContactId = null;
   renderHistoryList();
   toast(existingId ? 'איש הקשר עודכן' : 'איש הקשר נוסף');
 }
 function editContactPrompt(id){
   const c = _contactsCache[id]; if(!c) return;
   currentContactCategory = c.category || 'execution';
-  openAddContactForm(c.projectId, id);
+  editingContactId = id;
+  renderHistoryList();
 }
 function deleteContact(id){
   const c = _contactsCache[id]; if(!c) return;
   if(!confirm(`למחוק את איש הקשר "${c.name}"?`)) return;
   delete _contactsCache[id];
+  if(editingContactId===id) editingContactId = null;
   deleteContactFromCloud(id);
   renderHistoryList();
 }

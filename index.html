@@ -425,9 +425,9 @@
   <!-- TAB: COVER PAGE -->
   <div id="screen-project" class="tab-panel">
     <div class="editor-grid">
-      <div class="card">
+      <div class="card only-general">
         <h3 style="margin:0 0 4px;">פרויקט משויך</h3>
-        <p class="helptext" style="margin-bottom:14px;">שיוך הדוח לפרויקט חושף כאן את אנשי הקשר, החברות ורשימות התפוצה השמורים של אותו פרויקט בלבד.</p>
+        <p class="helptext" style="margin-bottom:14px;">שיוך הדוח לפרויקט חושף כאן את אנשי הקשר ורשימות התפוצה השמורים של אותו פרויקט בלבד.</p>
         <div class="field" style="margin-bottom:0;">
           <label>פרויקט</label>
           <div class="row">
@@ -677,6 +677,7 @@ let currentFolderId = null; // history screen: null = root view, otherwise the o
 let currentProjectSubTab = 'reports'; // when inside a project: 'reports' | 'contacts' | 'lists'
 let currentContactCategory = 'execution'; // when inside the contacts sub-tab: 'execution' | 'planning' | 'coordination'
 let currentContactSort = 'name'; // 'name' | 'role' | 'company'
+let currentContactSortDir = 'asc'; // 'asc' | 'desc'
 
 function emptyProject(){
   return { title:'', projectName:'', meetingType:'', meetingLocation:'', meetingDate:'', meetingDateLabel:'תאריך הפגישה', distributionDate:'', author:'',
@@ -941,9 +942,10 @@ function contactsForProject(projectId, category){
   return list;
 }
 // sortBy: 'name' (default, alphabetical by contact name) | 'role' | 'company' — ties always break by name.
-function sortContacts(list, sortBy){
+function sortContacts(list, sortBy, dir){
   const key = (sortBy==='role' || sortBy==='company') ? sortBy : 'name';
-  return list.slice().sort((a,b)=> (a[key]||'').localeCompare((b[key]||''), 'he') || (a.name||'').localeCompare(b.name||'', 'he'));
+  const mult = dir==='desc' ? -1 : 1;
+  return list.slice().sort((a,b)=> mult*((a[key]||'').localeCompare((b[key]||''), 'he')) || (a.name||'').localeCompare(b.name||'', 'he'));
 }
 function distListsForProject(projectId){
   return Object.values(_distListsCache).filter(l=>l.projectId===projectId).sort((a,b)=> (a.name||'').localeCompare(b.name||'', 'he'));
@@ -992,18 +994,18 @@ function contactsTabHtml(projectId){
   const catTabsHtml = CONTACT_CATEGORIES.map(cat=>
     `<button class="btn btn-sm ${currentContactCategory===cat.key?'btn-dark':'btn-ghost'}" onclick="switchContactCategory('${projectId}','${cat.key}')">${cat.label}</button>`
   ).join('');
-  const contacts = sortContacts(contactsForProject(projectId, currentContactCategory), currentContactSort);
-  const sortArrow = (col)=> currentContactSort===col ? ' ▲' : '';
+  const contacts = sortContacts(contactsForProject(projectId, currentContactCategory), currentContactSort, currentContactSortDir);
+  const sortArrow = (col)=> currentContactSort!==col ? '' : (currentContactSortDir==='desc' ? ' ▼' : ' ▲');
   const rows = contacts.map(c=>{
     if(c.id === editingContactId) return contactEditRowHtml(projectId, c);
     return `
     <tr>
       <td>${escapeHtml(c.role||'—')}</td>
       <td>${escapeHtml(c.company||'—')}</td>
-      <td><b>${escapeHtml(c.name||'—')}</b></td>
-      <td>${escapeHtml(c.phoneOffice||'—')}</td>
-      <td>${escapeHtml(c.phoneMobile||'—')}</td>
-      <td>${escapeHtml(c.email||'—')}</td>
+      <td style="white-space:nowrap;"><b>${escapeHtml(c.name||'—')}</b></td>
+      <td style="white-space:nowrap;">${escapeHtml(c.phoneOffice||'—')}</td>
+      <td style="white-space:nowrap;">${escapeHtml(c.phoneMobile||'—')}</td>
+      <td style="white-space:nowrap;">${escapeHtml(c.email||'—')}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-ghost btn-sm" onclick="editContactPrompt('${c.id}')">עריכה</button>
         <button class="btn btn-danger-ghost btn-sm" onclick="deleteContact('${c.id}')">מחיקה</button>
@@ -1045,7 +1047,12 @@ function switchContactCategory(projectId, categoryKey){
   renderHistoryList();
 }
 function onContactSortChange(col){
-  currentContactSort = col;
+  if(currentContactSort === col){
+    currentContactSortDir = currentContactSortDir==='asc' ? 'desc' : 'asc';
+  }else{
+    currentContactSort = col;
+    currentContactSortDir = 'asc';
+  }
   renderHistoryList();
 }
 function contactEditRowHtml(projectId, editing){

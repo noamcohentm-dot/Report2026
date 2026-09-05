@@ -270,6 +270,20 @@
   .simple-table{width:100%;border-collapse:collapse;font-size:12.5px;}
   .simple-table th{background:var(--bg);text-align:right;padding:8px 10px;font-weight:700;color:var(--ink-soft);border-bottom:1px solid var(--line);white-space:nowrap;}
   .simple-table td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;}
+
+  .side-caret{margin-inline-start:auto;font-size:10px;opacity:.6;padding:2px 4px;}
+  .sidebar-tree{padding:2px 10px 6px 10px;font-size:12.5px;}
+  .sidebar-tree-empty{color:var(--ink-soft);padding:6px 30px;font-size:12px;}
+  .sidebar-tree-row{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:8px;cursor:pointer;}
+  .sidebar-tree-row:hover{background:var(--bg);}
+  .sidebar-tree-row.active{background:var(--accent-soft);color:var(--accent);font-weight:700;}
+  .sidebar-tree-caret{width:14px;text-align:center;opacity:.6;font-size:10px;flex-shrink:0;}
+  .sidebar-tree-icon{flex-shrink:0;}
+  .sidebar-tree-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sidebar-tree-children{padding-inline-start:26px;}
+  .sidebar-tree-leaf{padding:5px 8px;border-radius:8px;cursor:pointer;color:var(--ink-soft);}
+  .sidebar-tree-leaf:hover{background:var(--bg);}
+  .sidebar-tree-leaf.active{background:var(--accent-soft);color:var(--accent);font-weight:700;}
   .only-safety{display:none;}
 
   #login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;}
@@ -313,7 +327,8 @@
   </div>
   <nav class="sidebar-nav">
     <button class="side-link" id="nav-dashboard" onclick="showDashboardScreen()"><span class="side-icon">▦</span><span>לוח בקרה</span></button>
-    <button class="side-link" id="nav-projects" onclick="showHistoryScreen()"><span class="side-icon">🗀</span><span>פרויקטים</span></button>
+    <button class="side-link" id="nav-projects" onclick="onNavProjectsClick()"><span class="side-icon">🗀</span><span>פרויקטים</span><span class="side-caret" id="nav-projects-caret" onclick="event.stopPropagation(); toggleSidebarProjectsTree();">▸</span></button>
+    <div id="sidebar-projects-tree" class="sidebar-tree hidden"></div>
     <button class="side-link" id="nav-editor" onclick="showNewReportTypeScreen()"><span class="side-icon">🗎</span><span>דוח חדש</span></button>
     <button class="side-link" id="nav-trash" onclick="showTrashScreen()"><span class="side-icon">🗑</span><span>סל מחזור</span></button>
   </nav>
@@ -498,6 +513,12 @@
             <div class="chips" id="participants-list"></div>
           </div>
 
+          <div class="field" id="copies-contact-picker-wrap">
+            <label>הוספה מרשימת אנשי הקשר של הפרויקט</label>
+            <select id="copies-contact-select" onchange="addCopyLineFromContact(this.value); this.value='';">
+              <option value="">— בחרו איש קשר —</option>
+            </select>
+          </div>
           <div class="field">
             <label>העתקים (כל נמען בשורה חדשה)</label>
             <textarea id="p-copies" placeholder="לדוגמה:&#10;שי לוי - קבלן&#10;אביב רון - נתיבי ישראל"></textarea>
@@ -653,7 +674,9 @@ const CURRENT_KEY = 'siteInspectionCurrentId_v2';
 const OLD_DRAFT_KEY = 'siteInspectionDraft_v1';
 const FOLDERS_KEY = 'siteInspectionFolders_v1';
 let currentFolderId = null; // history screen: null = root view, otherwise the open project's id
-let currentProjectSubTab = 'reports'; // when inside a project: 'reports' | 'contacts' | 'companies' | 'lists'
+let currentProjectSubTab = 'reports'; // when inside a project: 'reports' | 'contacts' | 'lists'
+let currentContactCategory = 'execution'; // when inside the contacts sub-tab: 'execution' | 'planning' | 'coordination'
+let currentContactSort = 'name'; // 'name' | 'role' | 'company'
 
 function emptyProject(){
   return { title:'', projectName:'', meetingType:'', meetingLocation:'', meetingDate:'', meetingDateLabel:'תאריך הפגישה', distributionDate:'', author:'',
@@ -887,34 +910,40 @@ function deleteSelectedProfile(){
   toast('הפרופיל נמחק');
 }
 
-/* ================= PROJECT-SCOPED DATA: contacts, companies, distribution lists =================
-   All three are children of a project (folder), matching the spec: no app-wide pool, everything lives
+/* ================= PROJECT-SCOPED DATA: contacts, distribution lists =================
+   Both are children of a project (folder), matching the spec: no app-wide pool, everything lives
    under its project only. Same cache+cloud-sync shape as reports/profiles/projects above. */
 const CONTACTS_TABLE = 'contacts';
-const COMPANIES_TABLE = 'companies';
 const DIST_LISTS_TABLE = 'distribution_lists';
-let _contactsCache = {};   // id -> {id, projectId, name, role, company, phoneOffice, phoneMobile, email}
-let _companiesCache = {};  // id -> {id, projectId, name, kind, phone, email}
+const CONTACT_CATEGORIES = [
+  { key:'execution', label:'צוות ביצוע' },
+  { key:'planning', label:'צוות תכנון' },
+  { key:'coordination', label:'תיאומים והיתרים' },
+];
+let _contactsCache = {};   // id -> {id, projectId, category, name, role, company, phoneOffice, phoneMobile, email}
 let _distListsCache = {};  // id -> {id, projectId, name, contactIds:[...]}
 
 async function loadProjectChildTablesFromCloud(){
   const user = _currentUser;
   if(!user) return;
-  const [c,co,dl] = await Promise.all([
+  const [c,dl] = await Promise.all([
     supabaseClient.from(CONTACTS_TABLE).select('*').eq('owner_uid', user.id),
-    supabaseClient.from(COMPANIES_TABLE).select('*').eq('owner_uid', user.id),
     supabaseClient.from(DIST_LISTS_TABLE).select('*').eq('owner_uid', user.id),
   ]);
-  if(c.error) throw c.error; if(co.error) throw co.error; if(dl.error) throw dl.error;
-  _contactsCache = {}; (c.data||[]).forEach(r=>{ _contactsCache[r.id] = { id:r.id, projectId:r.project_id, name:r.name||'', role:r.role||'', company:r.company||'', phoneOffice:r.phone_office||'', phoneMobile:r.phone_mobile||'', email:r.email||'' }; });
-  _companiesCache = {}; (co.data||[]).forEach(r=>{ _companiesCache[r.id] = { id:r.id, projectId:r.project_id, name:r.name||'', kind:r.kind||'', phone:r.phone||'', email:r.email||'' }; });
+  if(c.error) throw c.error; if(dl.error) throw dl.error;
+  _contactsCache = {}; (c.data||[]).forEach(r=>{ _contactsCache[r.id] = { id:r.id, projectId:r.project_id, category:r.category||'execution', name:r.name||'', role:r.role||'', company:r.company||'', phoneOffice:r.phone_office||'', phoneMobile:r.phone_mobile||'', email:r.email||'' }; });
   _distListsCache = {}; (dl.data||[]).forEach(r=>{ _distListsCache[r.id] = { id:r.id, projectId:r.project_id, name:r.name||'', contactIds:r.contact_ids||[] }; });
 }
-function contactsForProject(projectId){
-  return Object.values(_contactsCache).filter(c=>c.projectId===projectId).sort((a,b)=> (a.name||'').localeCompare(b.name||'', 'he'));
+// category is optional — omit it to get every contact in the project across all 3 categories.
+function contactsForProject(projectId, category){
+  let list = Object.values(_contactsCache).filter(c=>c.projectId===projectId);
+  if(category) list = list.filter(c=>c.category===category);
+  return list;
 }
-function companiesForProject(projectId){
-  return Object.values(_companiesCache).filter(c=>c.projectId===projectId).sort((a,b)=> (a.name||'').localeCompare(b.name||'', 'he'));
+// sortBy: 'name' (default, alphabetical by contact name) | 'role' | 'company' — ties always break by name.
+function sortContacts(list, sortBy){
+  const key = (sortBy==='role' || sortBy==='company') ? sortBy : 'name';
+  return list.slice().sort((a,b)=> (a[key]||'').localeCompare((b[key]||''), 'he') || (a.name||'').localeCompare(b.name||'', 'he'));
 }
 function distListsForProject(projectId){
   return Object.values(_distListsCache).filter(l=>l.projectId===projectId).sort((a,b)=> (a.name||'').localeCompare(b.name||'', 'he'));
@@ -922,7 +951,7 @@ function distListsForProject(projectId){
 async function pushContactToCloud(id){
   const user = _currentUser; const c = _contactsCache[id]; if(!user||!c) return;
   try{
-    const { error } = await supabaseClient.from(CONTACTS_TABLE).upsert({ id, owner_uid:user.id, project_id:c.projectId, name:c.name, role:c.role, company:c.company, phone_office:c.phoneOffice, phone_mobile:c.phoneMobile, email:c.email });
+    const { error } = await supabaseClient.from(CONTACTS_TABLE).upsert({ id, owner_uid:user.id, project_id:c.projectId, category:c.category, name:c.name, role:c.role, company:c.company, phone_office:c.phoneOffice, phone_mobile:c.phoneMobile, email:c.email });
     if(error) throw error;
   }catch(err){ console.error(err); toast('שגיאה בשמירת איש הקשר לענן'); }
 }
@@ -930,18 +959,6 @@ async function deleteContactFromCloud(id){
   const user = _currentUser; if(!user) return;
   try{ const { error } = await supabaseClient.from(CONTACTS_TABLE).delete().eq('id', id); if(error) throw error; }
   catch(err){ console.error(err); toast('שגיאה במחיקת איש הקשר מהענן'); }
-}
-async function pushCompanyToCloud(id){
-  const user = _currentUser; const c = _companiesCache[id]; if(!user||!c) return;
-  try{
-    const { error } = await supabaseClient.from(COMPANIES_TABLE).upsert({ id, owner_uid:user.id, project_id:c.projectId, name:c.name, kind:c.kind, phone:c.phone, email:c.email });
-    if(error) throw error;
-  }catch(err){ console.error(err); toast('שגיאה בשמירת החברה לענן'); }
-}
-async function deleteCompanyFromCloud(id){
-  const user = _currentUser; if(!user) return;
-  try{ const { error } = await supabaseClient.from(COMPANIES_TABLE).delete().eq('id', id); if(error) throw error; }
-  catch(err){ console.error(err); toast('שגיאה במחיקת החברה מהענן'); }
 }
 async function pushDistListToCloud(id){
   const user = _currentUser; const l = _distListsCache[id]; if(!user||!l) return;
@@ -955,12 +972,11 @@ async function deleteDistListFromCloud(id){
   try{ const { error } = await supabaseClient.from(DIST_LISTS_TABLE).delete().eq('id', id); if(error) throw error; }
   catch(err){ console.error(err); toast('שגיאה במחיקת רשימת התפוצה מהענן'); }
 }
-// When a whole project is deleted, its contacts/companies/lists go with it (best-effort; the DB also
-// cascades this automatically via the project_id foreign key, so this local cleanup + cloud calls are
-// mostly for immediate UI consistency without waiting for a fresh reload).
+// When a whole project is deleted, its contacts/lists go with it (best-effort; the DB also cascades
+// this automatically via the project_id foreign key, so this local cleanup + cloud calls are mostly
+// for immediate UI consistency without waiting for a fresh reload).
 function deleteAllProjectChildData(projectId){
   contactsForProject(projectId).forEach(c=>{ delete _contactsCache[c.id]; deleteContactFromCloud(c.id); });
-  companiesForProject(projectId).forEach(c=>{ delete _companiesCache[c.id]; deleteCompanyFromCloud(c.id); });
   distListsForProject(projectId).forEach(l=>{ delete _distListsCache[l.id]; deleteDistListFromCloud(l.id); });
 }
 
@@ -972,7 +988,10 @@ function switchProjectSubTab(key){
 
 /* ---- CONTACTS tab ---- */
 function contactsTabHtml(projectId){
-  const contacts = contactsForProject(projectId);
+  const catTabsHtml = CONTACT_CATEGORIES.map(cat=>
+    `<button class="btn btn-sm ${currentContactCategory===cat.key?'btn-dark':'btn-ghost'}" onclick="switchContactCategory('${projectId}','${cat.key}')">${cat.label}</button>`
+  ).join('');
+  const contacts = sortContacts(contactsForProject(projectId, currentContactCategory), currentContactSort);
   const rows = contacts.map(c=>`
     <tr>
       <td>${escapeHtml(c.role||'—')}</td>
@@ -986,16 +1005,23 @@ function contactsTabHtml(projectId){
         <button class="btn btn-danger-ghost btn-sm" onclick="deleteContact('${c.id}')">מחיקה</button>
       </td>
     </tr>`).join('');
+  const catLabel = (CONTACT_CATEGORIES.find(c=>c.key===currentContactCategory)||{}).label || '';
   return `
     <div class="card">
+      <div class="row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px;">${catTabsHtml}</div>
       <div class="row" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-        <h3 style="margin:0;">אנשי קשר (${contacts.length})</h3>
-        <div class="row" style="gap:8px;">
+        <h3 style="margin:0;">${escapeHtml(catLabel)} (${contacts.length})</h3>
+        <div class="row" style="gap:8px;flex-wrap:wrap;">
+          <select id="contact-sort-select" onchange="onContactSortChange(this.value)" style="width:auto;">
+            <option value="name" ${currentContactSort==='name'?'selected':''}>מיון: איש קשר (א-ב)</option>
+            <option value="role" ${currentContactSort==='role'?'selected':''}>מיון: תפקיד</option>
+            <option value="company" ${currentContactSort==='company'?'selected':''}>מיון: חברה</option>
+          </select>
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('contacts-xlsx-input').click()">📥 ייבוא מאקסל</button>
           <button class="btn btn-primary btn-sm" onclick="openAddContactForm('${projectId}')">＋ הוסף איש קשר</button>
         </div>
       </div>
-      <p class="helptext" style="margin-bottom:14px;">ייבוא מאקסל: הקובץ צריך לכלול שורת כותרות עם עמודות כמו "תפקיד", "שם חברה", "איש קשר", "טלפון משרד", "טלפון נייד", "דוא\"ל" — בכל סדר עמודות, בכל גיליון בקובץ. שורת הכותרות מזוהה אוטומטית.</p>
+      <p class="helptext" style="margin-bottom:14px;">ייבוא מאקסל מוסיף לקטגוריה הנבחרת (${escapeHtml(catLabel)}). הקובץ צריך לכלול שורת כותרות עם עמודות כמו "תפקיד", "שם חברה", "איש קשר", "טלפון משרד", "טלפון נייד", "דוא\"ל" — בכל סדר עמודות, בכל גיליון בקובץ. שורת הכותרות מזוהה אוטומטית.</p>
       <input type="file" id="contacts-xlsx-input" accept=".xlsx,.xls" class="hidden" onchange="handleContactsExcelFile(event,'${projectId}')">
       <div id="contact-add-form-slot"></div>
       ${contacts.length ? `
@@ -1004,9 +1030,17 @@ function contactsTabHtml(projectId){
           <thead><tr><th>תפקיד</th><th>חברה</th><th>איש קשר</th><th>טלפון משרד</th><th>טלפון נייד</th><th>דוא"ל</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
-      </div>` : '<div class="empty">אין עדיין אנשי קשר בפרויקט זה.</div>'}
+      </div>` : `<div class="empty">אין עדיין אנשי קשר תחת "${escapeHtml(catLabel)}" בפרויקט זה.</div>`}
       <div id="contacts-import-preview-slot"></div>
     </div>`;
+}
+function switchContactCategory(projectId, categoryKey){
+  currentContactCategory = categoryKey;
+  renderHistoryList();
+}
+function onContactSortChange(val){
+  currentContactSort = val;
+  renderHistoryList();
 }
 function openAddContactForm(projectId, existingId){
   const editing = existingId ? _contactsCache[existingId] : null;
@@ -1016,6 +1050,9 @@ function openAddContactForm(projectId, existingId){
     <div class="card" style="background:#FAF9F6;margin-bottom:14px;">
       <h3 style="margin:0 0 10px;font-size:14px;">${editing?'עריכת איש קשר':'איש קשר חדש'}</h3>
       <div class="editor-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="field"><label>קטגוריה</label>
+          <select id="cf-category">${CONTACT_CATEGORIES.map(cat=>`<option value="${cat.key}" ${(editing?editing.category:currentContactCategory)===cat.key?'selected':''}>${cat.label}</option>`).join('')}</select>
+        </div>
         <div class="field"><label>תפקיד</label><input type="text" id="cf-role" value="${editing?escapeAttr(editing.role):''}"></div>
         <div class="field"><label>שם חברה</label><input type="text" id="cf-company" value="${editing?escapeAttr(editing.company):''}"></div>
         <div class="field"><label>איש קשר (שם)</label><input type="text" id="cf-name" value="${editing?escapeAttr(editing.name):''}"></div>
@@ -1036,6 +1073,7 @@ function submitContactForm(projectId, existingId){
   const id = existingId || uid();
   _contactsCache[id] = {
     id, projectId,
+    category: document.getElementById('cf-category').value,
     role: document.getElementById('cf-role').value.trim(),
     company: document.getElementById('cf-company').value.trim(),
     name,
@@ -1050,6 +1088,7 @@ function submitContactForm(projectId, existingId){
 }
 function editContactPrompt(id){
   const c = _contactsCache[id]; if(!c) return;
+  currentContactCategory = c.category || 'execution';
   openAddContactForm(c.projectId, id);
 }
 function deleteContact(id){
@@ -1137,7 +1176,7 @@ function showContactsImportPreview(parsedRows, projectId){
       ((c.phoneMobile && r.phoneMobile && c.phoneMobile===r.phoneMobile) || (c.email && r.email && c.email.toLowerCase()===r.email.toLowerCase())));
     return Object.assign({}, r, { _missingName: missingName, _dup: dup, _selected: !missingName });
   });
-  window._pendingContactImport = { projectId, rows };
+  window._pendingContactImport = { projectId, category: currentContactCategory, rows };
   renderContactsImportPreview();
 }
 function renderContactsImportPreview(){
@@ -1181,82 +1220,12 @@ function confirmContactsImport(){
   if(!toImport.length){ toast('לא נבחרו שורות לייבוא'); return; }
   toImport.forEach(r=>{
     const id = uid();
-    _contactsCache[id] = { id, projectId: st.projectId, name:r.name, role:r.role||'', company:r.company||'', phoneOffice:r.phoneOffice||'', phoneMobile:r.phoneMobile||'', email:r.email||'' };
+    _contactsCache[id] = { id, projectId: st.projectId, category: st.category, name:r.name, role:r.role||'', company:r.company||'', phoneOffice:r.phoneOffice||'', phoneMobile:r.phoneMobile||'', email:r.email||'' };
     pushContactToCloud(id);
   });
   toast(`${toImport.length} אנשי קשר יובאו בהצלחה`);
   window._pendingContactImport = null;
   renderHistoryList();
-}
-
-/* ---- COMPANIES tab ---- */
-const COMPANY_KINDS = ['קבלן ראשי','קבלן משנה','מזמין','מנהלת','רשות מקומית','חברת חשמל','מקורות','יועץ','אחר'];
-function companiesTabHtml(projectId){
-  const companies = companiesForProject(projectId);
-  const rows = companies.map(c=>`
-    <tr>
-      <td>${escapeHtml(c.kind||'—')}</td>
-      <td><b>${escapeHtml(c.name||'—')}</b></td>
-      <td>${escapeHtml(c.phone||'—')}</td>
-      <td>${escapeHtml(c.email||'—')}</td>
-      <td style="white-space:nowrap;">
-        <button class="btn btn-ghost btn-sm" onclick="editCompanyPrompt('${c.id}')">עריכה</button>
-        <button class="btn btn-danger-ghost btn-sm" onclick="deleteCompany('${c.id}')">מחיקה</button>
-      </td>
-    </tr>`).join('');
-  return `
-    <div class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-        <h3 style="margin:0;">חברות וגורמים (${companies.length})</h3>
-        <button class="btn btn-primary btn-sm" onclick="openAddCompanyForm('${projectId}')">＋ הוסף חברה/גורם</button>
-      </div>
-      <div id="company-add-form-slot"></div>
-      ${companies.length ? `
-      <div style="overflow-x:auto;">
-        <table class="simple-table">
-          <thead><tr><th>סוג</th><th>שם החברה/הגורם</th><th>טלפון</th><th>דוא"ל</th><th></th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>` : '<div class="empty">אין עדיין חברות או גורמים בפרויקט זה.</div>'}
-    </div>`;
-}
-function openAddCompanyForm(projectId, existingId){
-  const editing = existingId ? _companiesCache[existingId] : null;
-  const slot = document.getElementById('company-add-form-slot');
-  if(!slot) return;
-  slot.innerHTML = `
-    <div class="card" style="background:#FAF9F6;margin-bottom:14px;">
-      <h3 style="margin:0 0 10px;font-size:14px;">${editing?'עריכת חברה/גורם':'חברה/גורם חדש'}</h3>
-      <div class="editor-grid" style="grid-template-columns:1fr 1fr;">
-        <div class="field"><label>סוג</label>
-          <select id="cof-kind">${COMPANY_KINDS.map(k=>`<option value="${k}" ${editing&&editing.kind===k?'selected':''}>${k}</option>`).join('')}</select>
-        </div>
-        <div class="field"><label>שם החברה/הגורם</label><input type="text" id="cof-name" value="${editing?escapeAttr(editing.name):''}"></div>
-        <div class="field"><label>טלפון</label><input type="text" id="cof-phone" value="${editing?escapeAttr(editing.phone):''}"></div>
-        <div class="field"><label>דוא"ל</label><input type="email" id="cof-email" value="${editing?escapeAttr(editing.email):''}"></div>
-      </div>
-      <div class="row">
-        <button class="btn btn-primary btn-sm" onclick="submitCompanyForm('${projectId}','${editing?editing.id:''}')">שמירה</button>
-        <button class="btn btn-ghost btn-sm" onclick="closeCompanyForm()">ביטול</button>
-      </div>
-    </div>`;
-}
-function closeCompanyForm(){ const slot=document.getElementById('company-add-form-slot'); if(slot) slot.innerHTML=''; }
-function submitCompanyForm(projectId, existingId){
-  const name = document.getElementById('cof-name').value.trim();
-  if(!name){ toast('נא להזין שם'); return; }
-  const id = existingId || uid();
-  _companiesCache[id] = { id, projectId, kind: document.getElementById('cof-kind').value, name, phone: document.getElementById('cof-phone').value.trim(), email: document.getElementById('cof-email').value.trim() };
-  pushCompanyToCloud(id);
-  closeCompanyForm();
-  renderHistoryList();
-  toast(existingId?'החברה עודכנה':'החברה נוספה');
-}
-function editCompanyPrompt(id){ const c=_companiesCache[id]; if(!c) return; openAddCompanyForm(c.projectId, id); }
-function deleteCompany(id){
-  const c = _companiesCache[id]; if(!c) return;
-  if(!confirm(`למחוק את "${c.name}"?`)) return;
-  delete _companiesCache[id]; deleteCompanyFromCloud(id); renderHistoryList();
 }
 
 /* ---- DISTRIBUTION LISTS tab ---- */
@@ -1352,6 +1321,7 @@ function renderProjectPickerSelect(){
 function onReportProjectSelectChange(val){
   assignReportFolder(state.id, val || null);
   renderParticipants();
+  renderCopiesContactPicker();
 }
 function createProjectFromCoverTab(){
   const before = Object.keys(loadFolders()).length;
@@ -1384,6 +1354,31 @@ function addParticipantFromContact(contactId){
   state.project.participants.push({ name: c.name, role: roleCombined });
   saveDraft();
   renderParticipants();
+}
+function renderCopiesContactPicker(){
+  const wrap = document.getElementById('copies-contact-picker-wrap');
+  const sel = document.getElementById('copies-contact-select');
+  if(!wrap || !sel) return;
+  if(!state.folderId){ wrap.classList.add('hidden'); return; }
+  const contacts = contactsForProject(state.folderId);
+  if(!contacts.length){ wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  sel.innerHTML = '<option value="">— בחרו איש קשר —</option>' + contacts.map(c=>{
+    const label = [c.name, [c.role,c.company].filter(Boolean).join(' - ')].filter(Boolean).join(' — ');
+    return `<option value="${c.id}">${escapeHtml(label)}</option>`;
+  }).join('');
+}
+function addCopyLineFromContact(contactId){
+  if(!contactId) return;
+  const c = _contactsCache[contactId];
+  if(!c) return;
+  const line = c.company ? `${c.name} - ${c.company}` : c.name;
+  const existing = (state.project.copies||'').trim();
+  const merged = existing ? existing + '\n' + line : line;
+  state.project.copies = merged;
+  saveDraft();
+  const el = document.getElementById('p-copies'); if(el) el.value = merged;
+  toast('נוסף לרשימת ההעתקים');
 }
 
 function saveDraft(){
@@ -1466,7 +1461,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
       _historyCache = {};
       _profilesCache = {};
       _projectsCache = {};
-      _contactsCache = {}; _companiesCache = {}; _distListsCache = {};
+      _contactsCache = {}; _distListsCache = {};
       state = emptyState();
       appRoot.classList.add('hidden');
       loginScreen.classList.remove('hidden');
@@ -1504,7 +1499,7 @@ async function initAppDataForUser(){
     await loadProjectChildTablesFromCloud();
   }catch(err){
     console.error(err);
-    _contactsCache = {}; _companiesCache = {}; _distListsCache = {};
+    _contactsCache = {}; _distListsCache = {};
   }
 
   const currentId = localStorage.getItem(CURRENT_KEY);
@@ -1518,6 +1513,7 @@ async function initAppDataForUser(){
   renderLogoPreview();
   renderParticipants();
   updateAppTitle();
+  renderSidebarProjectsTree();
   showDashboardScreen();
 }
 
@@ -1625,6 +1621,7 @@ function fillProjectInputs(){
   renderConclusionsBullets();
   renderProfileSelect();
   renderProjectPickerSelect();
+  renderCopiesContactPicker();
   applyReportTypeVisibility();
 }
 // Toggles cover-tab fields, tab bar buttons, and the "ליקויים" tab's inner view between the general
@@ -2036,26 +2033,102 @@ function createFolder(){
   saveFolders(folders);
   pushProjectToCloud(id);
   renderHistoryList();
+  renderSidebarProjectsTree();
 }
 function deleteFolder(id){
   const hist = loadHistory();
   const hasReports = Object.values(hist).some(r=>r.folderId===id && !r.trashedAt);
   if(hasReports){ toast('אי אפשר למחוק פרויקט שיש בו דוחות — הוציאו קודם את הדוחות ממנו'); return; }
-  if(!confirm('למחוק את הפרויקט? כל אנשי הקשר, החברות ורשימות התפוצה שלו יימחקו גם הם.')) return;
+  if(!confirm('למחוק את הפרויקט? כל אנשי הקשר ורשימות התפוצה שלו יימחקו גם הם.')) return;
   const folders = loadFolders();
   delete folders[id];
   saveFolders(folders);
   deleteProjectFromCloud(id);
   deleteAllProjectChildData(id);
   if(currentFolderId===id) currentFolderId = null;
+  sidebarExpandedProjectIds.delete(id);
   renderHistoryList();
+  renderSidebarProjectsTree();
 }
-function openFolder(id){ currentFolderId = id; currentProjectSubTab = 'reports'; renderHistoryList(); }
-function closeFolderView(){ currentFolderId = null; renderHistoryList(); }
+function openFolder(id){ currentFolderId = id; currentProjectSubTab = 'reports'; renderHistoryList(); renderSidebarProjectsTree(); }
+function closeFolderView(){ currentFolderId = null; renderHistoryList(); renderSidebarProjectsTree(); }
 function assignReportFolder(reportId, folderId){
   const hist = loadHistory();
   if(hist[reportId]){ hist[reportId].folderId = folderId || null; saveHistory(hist, reportId); }
   if(reportId === state.id){ state.folderId = folderId || null; updateEditorHeader(); renderProjectPickerSelect(); }
+}
+
+/* ---- sidebar project tree (file-explorer-style expand/collapse in the right-hand nav panel) ---- */
+let sidebarProjectsTreeOpen = false;
+let sidebarExpandedProjectIds = new Set();
+function onNavProjectsClick(){
+  showHistoryScreen(); // existing behavior: go to the root project list
+  sidebarProjectsTreeOpen = true;
+  renderSidebarProjectsTree();
+}
+function toggleSidebarProjectsTree(){
+  sidebarProjectsTreeOpen = !sidebarProjectsTreeOpen;
+  renderSidebarProjectsTree();
+}
+function toggleSidebarProjectExpand(id, ev){
+  if(ev) ev.stopPropagation();
+  if(sidebarExpandedProjectIds.has(id)) sidebarExpandedProjectIds.delete(id);
+  else sidebarExpandedProjectIds.add(id);
+  renderSidebarProjectsTree();
+}
+// Switches to the history screen WITHOUT resetting currentFolderId (unlike showHistoryScreen(), which
+// is meant for the plain "פרויקטים" nav click and always returns to the root project list).
+function switchToHistoryScreenKeepingFolder(){
+  hideAllScreens();
+  document.getElementById('screen-history').classList.remove('hidden');
+  document.getElementById('nav-projects').classList.add('active');
+  renderHistoryList();
+}
+function sidebarOpenProject(id){
+  currentFolderId = id;
+  currentProjectSubTab = 'reports';
+  switchToHistoryScreenKeepingFolder();
+  sidebarExpandedProjectIds.add(id);
+  renderSidebarProjectsTree();
+}
+function sidebarOpenProjectSubTab(id, subtab){
+  currentFolderId = id;
+  currentProjectSubTab = subtab;
+  switchToHistoryScreenKeepingFolder();
+  sidebarExpandedProjectIds.add(id);
+  renderSidebarProjectsTree();
+}
+function renderSidebarProjectsTree(){
+  const wrap = document.getElementById('sidebar-projects-tree');
+  const caret = document.getElementById('nav-projects-caret');
+  if(!wrap) return;
+  if(caret) caret.textContent = sidebarProjectsTreeOpen ? '▾' : '▸';
+  if(!sidebarProjectsTreeOpen){ wrap.classList.add('hidden'); wrap.innerHTML=''; return; }
+  wrap.classList.remove('hidden');
+  const projects = Object.values(loadFolders()).sort((a,b)=> (a.name||'').localeCompare(b.name||'', 'he'));
+  if(!projects.length){
+    wrap.innerHTML = '<div class="sidebar-tree-empty">אין עדיין פרויקטים</div>';
+    return;
+  }
+  wrap.innerHTML = projects.map(p=>{
+    const expanded = sidebarExpandedProjectIds.has(p.id);
+    const isActiveProject = currentFolderId === p.id;
+    const subItems = expanded ? `
+      <div class="sidebar-tree-children">
+        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='reports' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','reports')">🗎 דוחות</div>
+        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='contacts' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','contacts')">👤 אנשי קשר</div>
+        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='lists' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','lists')">📋 רשימות תפוצה</div>
+      </div>` : '';
+    return `
+      <div class="sidebar-tree-project">
+        <div class="sidebar-tree-row ${isActiveProject && !expanded ? 'active':''}" onclick="sidebarOpenProject('${p.id}')">
+          <span class="sidebar-tree-caret" onclick="toggleSidebarProjectExpand('${p.id}', event)">${expanded?'▾':'▸'}</span>
+          <span class="sidebar-tree-icon">📁</span>
+          <span class="sidebar-tree-name">${escapeHtml(p.name)}</span>
+        </div>
+        ${subItems}
+      </div>`;
+  }).join('');
 }
 
 /* ---- recycle bin ---- */
@@ -2134,7 +2207,6 @@ function renderHistoryList(){
     const tabs = [
       ['reports','🗎 דוחות'],
       ['contacts','👤 אנשי קשר'],
-      ['companies','🏢 חברות וגורמים'],
       ['lists','📋 רשימות תפוצה'],
     ];
     const subtabsHtml = `<div class="row" style="margin-bottom:16px;flex-wrap:wrap;gap:8px;">${tabs.map(([key,label])=>
@@ -2143,11 +2215,11 @@ function renderHistoryList(){
 
     let bodyHtml = '';
     if(currentProjectSubTab==='contacts') bodyHtml = contactsTabHtml(currentFolderId);
-    else if(currentProjectSubTab==='companies') bodyHtml = companiesTabHtml(currentFolderId);
     else if(currentProjectSubTab==='lists') bodyHtml = distListsTabHtml(currentFolderId);
     else{
       const items = allItems.filter(it=>it.folderId===currentFolderId).sort((a,b)=> (b.updatedAt||0) - (a.updatedAt||0));
-      bodyHtml = items.length ? items.map(item=>histItemHtml(item,'folder')).join('') : '<div class="empty">אין עדיין דוחות בפרויקט זה.<br>אפשר לגרור לכאן דוח מהמסך הראשי, או לבחור בפרויקט הזה בדף השער של דוח.</div>';
+      const countRow = `<p class="helptext" style="margin-bottom:14px;">${items.length} דוחות בפרויקט זה</p>`;
+      bodyHtml = countRow + (items.length ? items.map(item=>histItemHtml(item,'folder')).join('') : '<div class="empty">אין עדיין דוחות בפרויקט זה.<br>אפשר לגרור לכאן דוח מהמסך הראשי, או לבחור בפרויקט הזה בדף השער של דוח.</div>');
     }
 
     list.innerHTML = `
@@ -2157,6 +2229,7 @@ function renderHistoryList(){
       <div id="project-subtab-body">${bodyHtml}</div>
     `;
     if(currentProjectSubTab==='reports') attachHistDragHandlers();
+    renderSidebarProjectsTree();
     return;
   }
 
@@ -2169,6 +2242,7 @@ function renderHistoryList(){
   if(allItems.length===0 && folderList.length===0){
     list.innerHTML = '';
     empty.classList.remove('hidden');
+    renderSidebarProjectsTree();
     return;
   }
   empty.classList.add('hidden');
@@ -2192,6 +2266,7 @@ function renderHistoryList(){
   html += unfiled.map(item=>histItemHtml(item,'root')).join('');
   list.innerHTML = html;
   attachHistDragHandlers();
+  renderSidebarProjectsTree();
 }
 
 /* ---- drag a report card onto a folder tile ---- */

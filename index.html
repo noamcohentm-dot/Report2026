@@ -674,10 +674,13 @@ const CURRENT_KEY = 'siteInspectionCurrentId_v2';
 const OLD_DRAFT_KEY = 'siteInspectionDraft_v1';
 const FOLDERS_KEY = 'siteInspectionFolders_v1';
 let currentFolderId = null; // history screen: null = root view, otherwise the open project's id
-let currentProjectSubTab = 'reports'; // when inside a project: 'reports' | 'contacts' | 'lists'
+let currentProjectSubTab = 'reports'; // when inside a project: 'reports' | 'contacts' | 'lists' | 'defects' | 'details'
 let currentContactCategory = 'execution'; // when inside the contacts sub-tab: 'execution' | 'planning' | 'coordination'
 let currentContactSort = 'name'; // 'name' | 'role' | 'company'
 let currentContactSortDir = 'asc'; // 'asc' | 'desc'
+let currentDefectsFilter = 'all'; // when inside the defects sub-tab: 'all' | 'general' | 'safety'
+let currentDefectDetailId = null; // set to a defect's id to show its detail view instead of the list
+let pendingNewReportProjectId = null; // set right before opening the new-report-type chooser from the sidebar's "➕ דוח חדש"
 
 function emptyProject(){
   return { title:'', projectName:'', meetingType:'', meetingLocation:'', meetingDate:'', meetingDateLabel:'תאריך הפגישה', distributionDate:'', author:'',
@@ -950,6 +953,243 @@ function sortContacts(list, sortBy, dir){
 function distListsForProject(projectId){
   return Object.values(_distListsCache).filter(l=>l.projectId===projectId).sort((a,b)=> (a.name||'').localeCompare(b.name||'', 'he'));
 }
+
+/* ================= DEFECTS REGISTRY (project-wide, computed from existing reports) =================
+   No separate table needed — every defect already lives inside its report's saved JSON (already
+   cloud-synced), so this is just a derived view: scan the project's own (non-trashed) reports and
+   flatten their defects, tagging each with its type (from the report's reportType) and origin report. */
+function defectsForProject(projectId){
+  const hist = loadHistory();
+  const out = [];
+  Object.values(hist).forEach(report=>{
+    if(report.trashedAt) return;
+    if(report.folderId !== projectId) return;
+    const type = (report.project && report.project.reportType) === 'safety' ? 'safety' : 'general';
+    const reportTitle = (report.project && (report.project.title || report.project.projectName)) || 'ללא כותרת';
+    (report.defects||[]).forEach(d=>{
+      out.push({
+        defectId: d.id, topic: d.topicLabel||'', location: d.location||'', description: d.description||'',
+        images: d.images||[], createdAt: d.createdAt || report.updatedAt || 0, type, reportId: report.id, reportTitle,
+      });
+    });
+  });
+  out.sort((a,b)=> (a.createdAt||0) - (b.createdAt||0));
+  return out;
+}
+function defectsTabHtml(projectId){
+  const all = defectsForProject(projectId);
+  if(currentDefectDetailId){
+    const idx = all.findIndex(d=>d.defectId===currentDefectDetailId);
+    if(idx!==-1) return defectDetailHtml(all[idx], idx+1);
+    currentDefectDetailId = null;
+  }
+  const filtered = currentDefectsFilter==='all' ? all : all.filter(d=>d.type===currentDefectsFilter);
+  const filterBtns = [['all','הכול'],['general','כללי'],['safety','בטיחות']].map(([key,label])=>
+    `<button class="btn btn-sm ${currentDefectsFilter===key?'btn-dark':'btn-ghost'}" onclick="switchDefectsFilter('${key}')">${label}</button>`
+  ).join('');
+  const rows = filtered.map(d=>{
+    const num = all.indexOf(d)+1;
+    return `
+    <tr style="cursor:pointer;" onclick="openDefectDetail('${d.defectId}')">
+      <td>${String(num).padStart(3,'0')}</td>
+      <td>${escapeHtml(d.topic||'—')}</td>
+      <td>${escapeHtml(d.location||'—')}</td>
+      <td>${d.type==='safety'?'בטיחות':'כללי'}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="card">
+      <div class="row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px;">${filterBtns}</div>
+      <h3 style="margin:0 0 14px;">ליקויים בפרויקט (${filtered.length})</h3>
+      ${filtered.length ? `
+      <div style="overflow-x:auto;">
+        <table class="simple-table">
+          <thead><tr><th>מס'</th><th>נושא</th><th>מיקום</th><th>סוג</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>` : '<div class="empty">אין עדיין ליקויים בפרויקט זה.</div>'}
+    </div>`;
+}
+function switchDefectsFilter(key){ currentDefectsFilter = key; renderHistoryList(); }
+function openDefectDetail(defectId){ currentDefectDetailId = defectId; renderHistoryList(); }
+function closeDefectDetail(){ currentDefectDetailId = null; renderHistoryList(); }
+function defectDetailHtml(d, num){
+  const imgs = (d.images||[]).map(src=>`<img src="${src}" style="width:140px;height:140px;object-fit:cover;border-radius:8px;border:1px solid var(--line);margin:4px;">`).join('');
+  const dateStr = d.createdAt ? new Date(d.createdAt).toLocaleDateString('he-IL') : '—';
+  return `
+    <div class="card">
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:14px;" onclick="closeDefectDetail()">→ חזרה לרשימה</button>
+      <h3 style="margin:0 0 10px;">ליקוי ${String(num).padStart(3,'0')}</h3>
+      <p style="margin:0 0 8px;"><b>נושא:</b> ${escapeHtml(d.topic||'—')}</p>
+      <p style="margin:0 0 8px;"><b>מיקום:</b> ${escapeHtml(d.location||'—')}</p>
+      <p style="margin:0 0 8px;"><b>תיאור:</b> ${escapeHtml(d.description||'—')}</p>
+      <p style="margin:0 0 8px;"><b>סוג:</b> ${d.type==='safety'?'בטיחות':'כללי'}</p>
+      <p style="margin:0 0 8px;"><b>תאריך יצירה:</b> ${dateStr}</p>
+      <p style="margin:0 0 14px;"><b>מתוך הדוח:</b> ${escapeHtml(d.reportTitle)}</p>
+      <div style="margin-bottom:14px;">${imgs || '<span class="helptext">אין תמונות</span>'}</div>
+      <button class="btn btn-primary btn-sm" onclick="openReportFromHistory('${d.reportId}')">📄 פתיחת הדוח המקורי</button>
+    </div>`;
+}
+
+/* ================= PROJECT DETAILS ("⚙️ פרטי פרויקט") ================= */
+function projectDetailsTabHtml(projectId){
+  const p = loadFolders()[projectId] || {};
+  const d = p.defaults || {};
+  const lists = distListsForProject(projectId);
+  const participantsHtml = (d.participants||[]).map((pt,idx)=>`
+    <span class="chip">${escapeHtml(pt.name)}${pt.role?' — '+escapeHtml(pt.role):''}<span class="x" onclick="removeProjectDefaultParticipant('${projectId}',${idx})">×</span></span>
+  `).join('');
+  return `
+    <div class="card">
+      <h3 style="margin:0 0 4px;">פרטי בסיס</h3>
+      <p class="helptext" style="margin-bottom:14px;">פרטים כלליים על הפרויקט.</p>
+      <div class="editor-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="field"><label>שם הפרויקט</label><input type="text" id="pd-name" value="${escapeAttr(p.name||'')}"></div>
+        <div class="field"><label>מספר חוזה</label><input type="text" id="pd-contractNumber" value="${escapeAttr(p.contractNumber||'')}"></div>
+        <div class="field"><label>מזמין</label><input type="text" id="pd-client" value="${escapeAttr(p.client||'')}"></div>
+        <div class="field"><label>קבלן ראשי</label><input type="text" id="pd-mainContractor" value="${escapeAttr(p.mainContractor||'')}"></div>
+        <div class="field"><label>מנהל פרויקט</label><input type="text" id="pd-projectManager" value="${escapeAttr(p.projectManager||'')}"></div>
+        <div class="field"><label>מפקח</label><input type="text" id="pd-supervisor" value="${escapeAttr(p.supervisor||'')}"></div>
+        <div class="field"><label>תאריך התחלה</label><input type="date" id="pd-startDate" value="${escapeAttr(p.startDate||'')}"></div>
+        <div class="field"><label>תאריך סיום מתוכנן</label><input type="date" id="pd-endDate" value="${escapeAttr(p.endDate||'')}"></div>
+        <div class="field"><label>סטטוס הפרויקט</label>
+          <select id="pd-status">${['פעיל','מושהה','הושלם'].map(s=>`<option value="${s}" ${(p.status||'פעיל')===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 4px;">מידע קבוע לדוחות</h3>
+      <p class="helptext" style="margin-bottom:14px;">משמש כברירת מחדל כשיוצרים דוח חדש מתוך הפרויקט הזה (מהתפריט הצדדי, "➕ דוח חדש").</p>
+      <div class="field">
+        <label>לוגו הפרויקט / המזמין (עליון)</label>
+        <div class="logo-row">
+          <div class="logo-preview" id="pd-logo-top-preview">${d.logoTop?`<img src="${d.logoTop}" style="max-width:100%;max-height:100%;">`:'<span style="color:var(--ink-soft);font-size:10px;">אין לוגו</span>'}</div>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pd-logo-top-input').click()">העלאת לוגו</button>
+        </div>
+        <input type="file" id="pd-logo-top-input" accept="image/*" class="hidden" onchange="handleProjectDefaultLogo(event,'${projectId}','logoTop')">
+      </div>
+      <div class="field"><label>פרטי כותב הדוח (ברירת מחדל)</label><input type="text" id="pd-author" value="${escapeAttr(d.author||'')}"></div>
+      <div class="field"><label>פרטי קבלן (ברירת מחדל, לדוחות בטיחות)</label><input type="text" id="pd-contractor" value="${escapeAttr(d.contractor||'')}"></div>
+      <div class="field">
+        <label>משתתפים – ברירת מחדל (לדוחות סיור כללי)</label>
+        <div class="chip-input-row">
+          <input type="text" id="pd-participant-name" placeholder="שם" style="flex:1.3;">
+          <input type="text" id="pd-participant-role" placeholder="תפקיד / חברה" style="flex:1;">
+          <button class="btn btn-ghost btn-sm" onclick="addProjectDefaultParticipant('${projectId}')">＋</button>
+        </div>
+        <div class="chips">${participantsHtml}</div>
+      </div>
+      <div class="field"><label>העתקים – ברירת מחדל</label><textarea id="pd-copies">${escapeHtml(d.copies||'')}</textarea></div>
+      <div class="field" style="margin-bottom:0;">
+        <label>רשימת תפוצה ברירת מחדל</label>
+        <select id="pd-distListId">
+          <option value="">— ללא —</option>
+          ${lists.map(l=>`<option value="${l.id}" ${d.distListId===l.id?'selected':''}>${escapeHtml(l.name)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 4px;">ניהול</h3>
+      <p class="helptext" style="margin-bottom:14px;">שינויים בפרטי הבסיס ובמידע הקבוע (מלבד לוגו ומשתתפים, שנשמרים מיד) נשמרים בלחיצה על הכפתור.</p>
+      <div class="row">
+        <button class="btn btn-primary btn-sm" onclick="saveProjectDetails('${projectId}')">💾 שמירת הפרטים</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportProjectInfoToExcel('${projectId}')">📤 ייצוא מידע (אקסל)</button>
+      </div>
+    </div>`;
+}
+async function handleProjectDefaultLogo(e, projectId, field){
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if(!f) return;
+  try{
+    const { blob, ratio } = await resizeImageToBlob(f, { maxDim:600, mimeType:'image/png' });
+    const url = await uploadBlobToStorage(blob, `projects/${projectId}/logos/${uid()}.png`);
+    const folders = loadFolders();
+    const p = folders[projectId]; if(!p) return;
+    p.defaults = p.defaults || {};
+    p.defaults[field] = url;
+    p.defaults[field+'Ratio'] = ratio;
+    saveFolders(folders);
+    pushProjectToCloud(projectId);
+    renderHistoryList();
+  }catch(err){ console.error(err); toast('שגיאה בהעלאת הלוגו'); }
+}
+function addProjectDefaultParticipant(projectId){
+  const nameInput = document.getElementById('pd-participant-name');
+  const roleInput = document.getElementById('pd-participant-role');
+  const name = nameInput.value.trim();
+  if(!name) return;
+  const folders = loadFolders();
+  const p = folders[projectId]; if(!p) return;
+  p.defaults = p.defaults || {};
+  p.defaults.participants = p.defaults.participants || [];
+  p.defaults.participants.push({ name, role: roleInput.value.trim() });
+  saveFolders(folders);
+  pushProjectToCloud(projectId);
+  renderHistoryList();
+}
+function removeProjectDefaultParticipant(projectId, idx){
+  const folders = loadFolders();
+  const p = folders[projectId]; if(!p || !p.defaults || !p.defaults.participants) return;
+  p.defaults.participants.splice(idx,1);
+  saveFolders(folders);
+  pushProjectToCloud(projectId);
+  renderHistoryList();
+}
+function saveProjectDetails(projectId){
+  const folders = loadFolders();
+  const p = folders[projectId]; if(!p) return;
+  p.name = document.getElementById('pd-name').value.trim() || p.name;
+  p.contractNumber = document.getElementById('pd-contractNumber').value.trim();
+  p.client = document.getElementById('pd-client').value.trim();
+  p.mainContractor = document.getElementById('pd-mainContractor').value.trim();
+  p.projectManager = document.getElementById('pd-projectManager').value.trim();
+  p.supervisor = document.getElementById('pd-supervisor').value.trim();
+  p.startDate = document.getElementById('pd-startDate').value;
+  p.endDate = document.getElementById('pd-endDate').value;
+  p.status = document.getElementById('pd-status').value;
+  p.defaults = p.defaults || {};
+  p.defaults.author = document.getElementById('pd-author').value.trim();
+  p.defaults.contractor = document.getElementById('pd-contractor').value.trim();
+  p.defaults.copies = document.getElementById('pd-copies').value;
+  p.defaults.distListId = document.getElementById('pd-distListId').value || null;
+  saveFolders(folders);
+  pushProjectToCloud(projectId);
+  renderHistoryList();
+  renderSidebarProjectsTree();
+  toast('פרטי הפרויקט נשמרו');
+}
+function exportProjectInfoToExcel(projectId){
+  if(!window.XLSX){ toast('ספריית אקסל לא נטענה — בדקו חיבור לאינטרנט'); return; }
+  const p = loadFolders()[projectId]; if(!p) return;
+  const wb = XLSX.utils.book_new();
+
+  const infoRows = [
+    ['שם הפרויקט', p.name||''], ['מספר חוזה', p.contractNumber||''], ['מזמין', p.client||''],
+    ['קבלן ראשי', p.mainContractor||''], ['מנהל פרויקט', p.projectManager||''], ['מפקח', p.supervisor||''],
+    ['תאריך התחלה', p.startDate||''], ['תאריך סיום מתוכנן', p.endDate||''], ['סטטוס', p.status||''],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(infoRows), 'פרטי פרויקט');
+
+  const catLabel = (key)=> (CONTACT_CATEGORIES.find(c=>c.key===key)||{}).label || key || '';
+  const contactRows = contactsForProject(projectId).map(c=>({
+    'קטגוריה': catLabel(c.category), 'תפקיד': c.role||'', 'שם חברה': c.company||'', 'איש קשר': c.name||'',
+    'טלפון משרד': c.phoneOffice||'', 'טלפון נייד': c.phoneMobile||'', 'דוא"ל': c.email||'',
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contactRows), 'אנשי קשר');
+
+  const defectRows = defectsForProject(projectId).map((d,i)=>({
+    'מס׳': String(i+1).padStart(3,'0'), 'נושא': d.topic||'', 'מיקום': d.location||'', 'תיאור': d.description||'',
+    'סוג': d.type==='safety'?'בטיחות':'כללי', 'תאריך': d.createdAt?new Date(d.createdAt).toLocaleDateString('he-IL'):'',
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(defectRows), 'ליקויים');
+
+  const safeName = (p.name||'פרויקט').replace(/[^\wא-ת\- ]/g,'').trim().replace(/\s+/g,'_') || 'פרויקט';
+  XLSX.writeFile(wb, `פרטי_פרויקט_${safeName}.xlsx`);
+}
+
 async function pushContactToCloud(id){
   const user = _currentUser; const c = _contactsCache[id]; if(!user||!c) return;
   try{
@@ -985,6 +1225,8 @@ function deleteAllProjectChildData(projectId){
 /* ---- project sub-tab switching (history screen, inside an open project) ---- */
 function switchProjectSubTab(key){
   currentProjectSubTab = key;
+  currentDefectDetailId = null;
+  editingContactId = null;
   renderHistoryList();
 }
 
@@ -1020,6 +1262,7 @@ function contactsTabHtml(projectId){
         <h3 style="margin:0;">${escapeHtml(catLabel)} (${contacts.length})</h3>
         <div class="row" style="gap:8px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('contacts-xlsx-input').click()">📥 ייבוא מאקסל</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportContactsToExcel('${projectId}')">📤 ייצוא לאקסל</button>
           <button class="btn btn-primary btn-sm" onclick="openAddContactForm('${projectId}')">＋ הוסף איש קשר</button>
         </div>
       </div>
@@ -1189,6 +1432,27 @@ function parseContactsFromWorkbook(wb){
     }
   });
   return order.map(k=>merged[k]);
+}
+function exportContactsToExcel(projectId){
+  if(!window.XLSX){ toast('ספריית קריאת אקסל לא נטענה — בדקו חיבור לאינטרנט ונסו שוב'); return; }
+  const contacts = contactsForProject(projectId);
+  if(!contacts.length){ toast('אין אנשי קשר לייצוא בפרויקט זה'); return; }
+  const catLabel = (key)=> (CONTACT_CATEGORIES.find(c=>c.key===key)||{}).label || key || '';
+  const data = contacts.map(c=>({
+    'קטגוריה': catLabel(c.category),
+    'תפקיד': c.role||'',
+    'שם חברה': c.company||'',
+    'איש קשר': c.name||'',
+    'טלפון משרד': c.phoneOffice||'',
+    'טלפון נייד': c.phoneMobile||'',
+    'דוא"ל': c.email||'',
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'אנשי קשר');
+  const folder = loadFolders()[projectId];
+  const safeName = (folder ? folder.name : 'פרויקט').replace(/[^\wא-ת\- ]/g,'').trim().replace(/\s+/g,'_') || 'פרויקט';
+  XLSX.writeFile(wb, `אנשי_קשר_${safeName}.xlsx`);
 }
 function handleContactsExcelFile(e, projectId){
   const file = e.target.files && e.target.files[0];
@@ -1940,12 +2204,43 @@ function showNewReportTypeScreen(){
 }
 function startNewReport(reportType){
   state = emptyState(reportType);
+  if(pendingNewReportProjectId){
+    state.folderId = pendingNewReportProjectId;
+    applyProjectDefaultsToState(pendingNewReportProjectId, reportType);
+    pendingNewReportProjectId = null;
+  }
   saveDraft();
   fillProjectInputs();
   renderLogoPreview();
   renderParticipants();
   openEditor('cover');
   toast('נפתח דוח חדש');
+}
+// Pre-fills a freshly created report with the project's saved "מידע קבוע לדוחות" (logo, author,
+// contractor, default participants/copies) — only applied when the report was started via a
+// project's own "➕ דוח חדש" action, so it never silently overrides fields on a report the person
+// started from the plain "דוח חדש" screen.
+function applyProjectDefaultsToState(projectId, reportType){
+  const p = loadFolders()[projectId];
+  if(!p) return;
+  if(p.name) state.project.projectName = p.name;
+  const d = p.defaults;
+  if(!d) return;
+  if(d.logoTop){ state.project.logoTop = d.logoTop; state.project.logoTopRatio = d.logoTopRatio; }
+  if(d.logoBottom){ state.project.logoBottom = d.logoBottom; state.project.logoBottomRatio = d.logoBottomRatio; }
+  if(d.author) state.project.author = d.author;
+  if(reportType==='safety' && d.contractor) state.project.contractor = d.contractor;
+  if(reportType==='general'){
+    if(d.participants && d.participants.length) state.project.participants = d.participants.map(x=>({ name:x.name||'', role:x.role||'' }));
+    if(d.copies) state.project.copies = d.copies;
+    else if(d.distListId){
+      const list = _distListsCache[d.distListId];
+      if(list){
+        const lines = list.contactIds.map(cid=>_contactsCache[cid]).filter(Boolean).map(c=> c.company?`${c.name} - ${c.company}`:c.name);
+        if(lines.length) state.project.copies = lines.join('\n');
+      }
+    }
+  }
 }
 function resetAll(){ showNewReportTypeScreen(); }
 function goToDefects(){ showEditorTab('defects'); }
@@ -2031,7 +2326,15 @@ async function loadProjectsFromCloud(){
   const map = {};
   const { data, error } = await supabaseClient.from(PROJECTS_TABLE).select('*').eq('owner_uid', user.id);
   if(error) throw error;
-  (data || []).forEach(row=>{ map[row.id] = { id: row.id, name: row.name, createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now() }; });
+  (data || []).forEach(row=>{
+    map[row.id] = {
+      id: row.id, name: row.name, createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+      contractNumber: row.contract_number || '', client: row.client || '', mainContractor: row.main_contractor || '',
+      projectManager: row.project_manager || '', supervisor: row.supervisor || '',
+      startDate: row.start_date || '', endDate: row.end_date || '', status: row.status || 'פעיל',
+      defaults: row.defaults || {},
+    };
+  });
   return map;
 }
 function loadFolders(){
@@ -2045,7 +2348,13 @@ async function pushProjectToCloud(id){
   const p = _projectsCache[id];
   if(!user || !p) return;
   try{
-    const { error } = await supabaseClient.from(PROJECTS_TABLE).upsert({ id, owner_uid:user.id, name:p.name });
+    const { error } = await supabaseClient.from(PROJECTS_TABLE).upsert({
+      id, owner_uid:user.id, name:p.name,
+      contract_number: p.contractNumber||null, client: p.client||null, main_contractor: p.mainContractor||null,
+      project_manager: p.projectManager||null, supervisor: p.supervisor||null,
+      start_date: p.startDate||null, end_date: p.endDate||null, status: p.status||'פעיל',
+      defaults: p.defaults||{},
+    });
     if(error) throw error;
   }catch(err){
     console.error('project sync failed', err);
@@ -2068,7 +2377,7 @@ function createFolder(){
   if(!name) return;
   const folders = loadFolders();
   const id = uid();
-  folders[id] = { id, name, createdAt: Date.now() };
+  folders[id] = { id, name, createdAt: Date.now(), status:'פעיל', defaults:{} };
   saveFolders(folders);
   pushProjectToCloud(id);
   renderHistoryList();
@@ -2101,8 +2410,8 @@ function assignReportFolder(reportId, folderId){
 let sidebarProjectsTreeOpen = false;
 let sidebarExpandedProjectIds = new Set();
 function onNavProjectsClick(){
+  sidebarProjectsTreeOpen = !sidebarProjectsTreeOpen;
   showHistoryScreen(); // existing behavior: go to the root project list
-  sidebarProjectsTreeOpen = true;
   renderSidebarProjectsTree();
 }
 function toggleSidebarProjectsTree(){
@@ -2137,6 +2446,12 @@ function sidebarOpenProjectSubTab(id, subtab){
   sidebarExpandedProjectIds.add(id);
   renderSidebarProjectsTree();
 }
+function sidebarNewReportForProject(projectId){
+  pendingNewReportProjectId = projectId;
+  showNewReportTypeScreen();
+  sidebarExpandedProjectIds.add(projectId);
+  renderSidebarProjectsTree();
+}
 function renderSidebarProjectsTree(){
   const wrap = document.getElementById('sidebar-projects-tree');
   const caret = document.getElementById('nav-projects-caret');
@@ -2154,9 +2469,12 @@ function renderSidebarProjectsTree(){
     const isActiveProject = currentFolderId === p.id;
     const subItems = expanded ? `
       <div class="sidebar-tree-children">
-        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='reports' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','reports')">🗎 דוחות</div>
-        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='contacts' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','contacts')">👤 אנשי קשר</div>
-        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='lists' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','lists')">📋 רשימות תפוצה</div>
+        <div class="sidebar-tree-leaf" onclick="sidebarNewReportForProject('${p.id}')">➕ דוח חדש</div>
+        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='reports' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','reports')">📄 דוחות</div>
+        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='defects' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','defects')">⚠️ ליקויים</div>
+        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='contacts' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','contacts')">👥 אנשי קשר</div>
+        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='lists' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','lists')">📨 רשימות תפוצה</div>
+        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='details' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','details')">⚙️ פרטי פרויקט</div>
       </div>` : '';
     return `
       <div class="sidebar-tree-project">
@@ -2245,16 +2563,23 @@ function renderHistoryList(){
     empty.classList.add('hidden');
     const tabs = [
       ['reports','🗎 דוחות'],
+      ['defects','⚠️ ליקויים'],
       ['contacts','👤 אנשי קשר'],
       ['lists','📋 רשימות תפוצה'],
+      ['details','⚙️ פרטי פרויקט'],
     ];
-    const subtabsHtml = `<div class="row" style="margin-bottom:16px;flex-wrap:wrap;gap:8px;">${tabs.map(([key,label])=>
-      `<button class="btn btn-sm ${currentProjectSubTab===key?'btn-dark':'btn-ghost'}" onclick="switchProjectSubTab('${key}')">${label}</button>`
-    ).join('')}</div>`;
+    const subtabsHtml = `<div class="row" style="margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <button class="btn btn-sm btn-primary" onclick="sidebarNewReportForProject('${currentFolderId}')">➕ דוח חדש</button>
+      ${tabs.map(([key,label])=>
+        `<button class="btn btn-sm ${currentProjectSubTab===key?'btn-dark':'btn-ghost'}" onclick="switchProjectSubTab('${key}')">${label}</button>`
+      ).join('')}
+    </div>`;
 
     let bodyHtml = '';
     if(currentProjectSubTab==='contacts') bodyHtml = contactsTabHtml(currentFolderId);
     else if(currentProjectSubTab==='lists') bodyHtml = distListsTabHtml(currentFolderId);
+    else if(currentProjectSubTab==='defects') bodyHtml = defectsTabHtml(currentFolderId);
+    else if(currentProjectSubTab==='details') bodyHtml = projectDetailsTabHtml(currentFolderId);
     else{
       const items = allItems.filter(it=>it.folderId===currentFolderId).sort((a,b)=> (b.updatedAt||0) - (a.updatedAt||0));
       const countRow = `<p class="helptext" style="margin-bottom:14px;">${items.length} דוחות בפרויקט זה</p>`;
@@ -2426,7 +2751,60 @@ function removeLogo(which){
   saveDraft(); renderLogoPreview();
 }
 // Resizes an image file client-side and resolves a Blob (used before uploading to Storage).
-function resizeImageToBlob(file, {maxDim, mimeType='image/jpeg', quality=0.9} = {}){
+// Real, if modest, automatic quality fix for photos taken on a weak camera/in poor light: stretches
+// each color channel's contrast between its 0.5th/99.5th percentile ("auto levels", the same classic
+// technique built into most photo editors) and applies a gentle sharpen afterward. It won't fix genuine
+// blur or very low resolution, but it does noticeably help the common case of a dull, washed-out,
+// low-contrast phone photo.
+function autoEnhanceCanvas(ctx, width, height){
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+  const n = width*height;
+
+  const histR = new Uint32Array(256), histG = new Uint32Array(256), histB = new Uint32Array(256);
+  for(let i=0;i<data.length;i+=4){ histR[data[i]]++; histG[data[i+1]]++; histB[data[i+2]]++; }
+  function percentileBounds(hist, total){
+    const clip = Math.floor(total * 0.005);
+    let lo=0, acc=0;
+    while(lo<255 && acc<clip){ acc+=hist[lo]; lo++; }
+    let hi=255; acc=0;
+    while(hi>0 && acc<clip){ acc+=hist[hi]; hi--; }
+    if(hi<=lo){ lo=0; hi=255; }
+    return [lo,hi];
+  }
+  const [rLo,rHi] = percentileBounds(histR, n);
+  const [gLo,gHi] = percentileBounds(histG, n);
+  const [bLo,bHi] = percentileBounds(histB, n);
+  const rScale = 255/Math.max(1,(rHi-rLo));
+  const gScale = 255/Math.max(1,(gHi-gLo));
+  const bScale = 255/Math.max(1,(bHi-bLo));
+  for(let i=0;i<data.length;i+=4){
+    data[i]   = Math.min(255, Math.max(0, (data[i]  -rLo)*rScale));
+    data[i+1] = Math.min(255, Math.max(0, (data[i+1]-gLo)*gScale));
+    data[i+2] = Math.min(255, Math.max(0, (data[i+2]-bLo)*bScale));
+  }
+
+  const src = new Uint8ClampedArray(data); // post-levels snapshot used as the sharpen input
+  const kernel = [0,-0.5,0, -0.5,3,-0.5, 0,-0.5,0]; // gentle — a full-strength kernel tends to add halos
+  const get = (x,y,c)=>{
+    if(x<0) x=0; else if(x>=width) x=width-1;
+    if(y<0) y=0; else if(y>=height) y=height-1;
+    return src[(y*width+x)*4+c];
+  };
+  for(let y=0;y<height;y++){
+    for(let x=0;x<width;x++){
+      const di = (y*width+x)*4;
+      for(let c=0;c<3;c++){
+        let sum=0, k=0;
+        for(let dy=-1;dy<=1;dy++){ for(let dx=-1;dx<=1;dx++){ sum += get(x+dx,y+dy,c) * kernel[k++]; } }
+        data[di+c] = Math.min(255, Math.max(0, sum));
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+}
+function resizeImageToBlob(file, {maxDim, mimeType='image/jpeg', quality=0.9, enhance=false} = {}){
   return new Promise((resolve,reject)=>{
     const reader = new FileReader();
     reader.onload = e=>{
@@ -2438,7 +2816,12 @@ function resizeImageToBlob(file, {maxDim, mimeType='image/jpeg', quality=0.9} = 
           else{ width=Math.round(width*maxDim/height); height=maxDim; }
         }
         const canvas=document.createElement('canvas'); canvas.width=width; canvas.height=height;
-        canvas.getContext('2d').drawImage(img,0,0,width,height);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img,0,0,width,height);
+        if(enhance){
+          try{ autoEnhanceCanvas(ctx, width, height); }
+          catch(err){ console.warn('image enhancement failed, using original', err); }
+        }
         canvas.toBlob(blob=>{
           if(!blob){ reject(new Error('toBlob failed')); return; }
           resolve({ blob, ratio: width/height });
@@ -2489,7 +2872,7 @@ function defectBadgesHtml(d){
 
 function addDefect(){
   state.defects.forEach(d=>d.open=false);
-  const d = { id:uid(), location:'', description:'', images:[], open:true, status:'not_relevant', severity:'not_relevant' };
+  const d = { id:uid(), location:'', description:'', images:[], open:true, status:'not_relevant', severity:'not_relevant', createdAt: Date.now() };
   state.defects.push(d);
   saveDraft(); renderDefects();
   setTimeout(()=>{ const el=document.getElementById('card-'+d.id); if(el) el.scrollIntoView({behavior:'smooth', block:'center'}); },60);
@@ -2572,7 +2955,7 @@ const SAFETY_CHECKLIST = [
 
 function addChecklistDefect(topicId, topicLabel){
   state.defects.forEach(d=>d.open=false);
-  const d = { id:uid(), topicId: topicId||null, topicLabel: topicLabel||'', location:'', description:'', images:[], open:true };
+  const d = { id:uid(), topicId: topicId||null, topicLabel: topicLabel||'', location:'', description:'', images:[], open:true, createdAt: Date.now() };
   state.defects.push(d);
   saveDraft(); renderChecklist();
   setTimeout(()=>{ const el=document.getElementById('cl-card-'+d.id); if(el) el.scrollIntoView({behavior:'smooth', block:'center'}); },60);
@@ -2785,7 +3168,7 @@ function removeImage(id, idx){
   d.images.splice(idx,1); saveDraft(); renderCurrentDefectsView();
 }
 async function compressImage(file, defectId){
-  const { blob } = await resizeImageToBlob(file, { maxDim:1500, mimeType:'image/jpeg', quality:0.72 });
+  const { blob } = await resizeImageToBlob(file, { maxDim:1500, mimeType:'image/jpeg', quality:0.72, enhance:true });
   return uploadBlobToStorage(blob, `reports/${state.id}/defects/${defectId}/${uid()}.jpg`);
 }
 

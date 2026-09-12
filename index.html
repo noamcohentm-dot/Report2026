@@ -430,7 +430,7 @@
   <!-- TAB: COVER PAGE -->
   <div id="screen-project" class="tab-panel">
     <div class="editor-grid">
-      <div class="card only-general">
+      <div class="card only-general only-meeting">
         <h3 style="margin:0 0 4px;">פרויקט משויך</h3>
         <p class="helptext" style="margin-bottom:14px;">שיוך הדוח לפרויקט חושף כאן את אנשי הקשר ורשימות התפוצה השמורים של אותו פרויקט בלבד.</p>
         <div class="field" style="margin-bottom:0;">
@@ -441,7 +441,7 @@
           </div>
         </div>
       </div>
-      <div class="card only-general">
+      <div class="card only-general only-meeting">
         <h3 style="margin:0 0 4px;">פרופיל פרויקט</h3>
         <p class="helptext" style="margin-bottom:14px;">שומרים פרטים שחוזרים על עצמם (פרויקט, סוג פגישה, מקום, כותב, משתתפים, העתקים) פעם אחת, וטוענים אותם בלחיצה אחת לכל דוח חדש.</p>
         <div class="field" style="margin-bottom:10px;">
@@ -458,43 +458,36 @@
         <h3 style="margin:0 0 4px;">פרטי הדוח</h3>
         <p class="helptext" style="margin-bottom:14px;">ממלאים פעם אחת בתחילת הדוח. ניתן לערוך בהמשך.</p>
 
-        <div class="field only-general">
+        <div class="field only-general only-meeting">
           <label>כותרת הדוח</label>
-          <input type="text" id="p-title" placeholder="לדוגמה: דוח ליקויי פיקוח / פרוטוקול ישיבה">
+          <input type="text" id="p-title" placeholder="לדוגמה: דוח ליקויי פיקוח / פרוטוקול ישיבה / סיכום ישיבת עבודה מס' 3">
         </div>
         <div class="field">
           <label>פרויקט</label>
           <input type="text" id="p-projectName" placeholder="שם האתר / הפרויקט">
         </div>
-        <div class="field only-safety only-meeting">
+        <div class="field only-safety">
           <label>קבלן</label>
           <input type="text" id="p-contractor" placeholder="שם הקבלן">
         </div>
-        <div class="field only-general">
+        <div class="field only-general only-meeting">
           <label>סוג פגישה</label>
-          <input type="text" id="p-meetingType" placeholder="לדוגמה: סיור פיקוח שוטף / ישיבת תיאום">
-        </div>
-        <div class="field only-meeting">
-          <label>סוג פגישה</label>
-          <div class="row">
-            <button type="button" class="toggle-btn meeting-type-quick-btn" data-val="Zoom" onclick="setMeetingTypeQuick('Zoom')">Zoom</button>
-            <button type="button" class="toggle-btn meeting-type-quick-btn" data-val="פרונטלית" onclick="setMeetingTypeQuick('פרונטלית')">פרונטלית</button>
-          </div>
+          <input type="text" id="p-meetingType" placeholder="לדוגמה: סיור פיקוח שוטף / ישיבת תיאום / פגישת עבודה">
         </div>
         <div class="field">
           <label id="meeting-date-field-label">תאריך הפגישה / הסיור</label>
-          <div class="row only-general" style="margin-bottom:10px;">
+          <div class="row only-general only-meeting" style="margin-bottom:10px;">
             <button type="button" class="toggle-btn" id="meeting-label-btn-meeting" onclick="setMeetingDateLabel('תאריך הפגישה')">תאריך הפגישה</button>
             <button type="button" class="toggle-btn" id="meeting-label-btn-tour" onclick="setMeetingDateLabel('תאריך הסיור')">תאריך הסיור</button>
           </div>
           <input type="date" id="p-meetingDate">
           <div class="helptext" id="meeting-date-preview">אפשר להשאיר ריק — במקרה כזה השדה לא יופיע בדף השער.</div>
         </div>
-        <div class="field only-general">
+        <div class="field only-general only-meeting">
           <label>מקום פגישה</label>
-          <input type="text" id="p-meetingLocation" placeholder="לדוגמה: משרד האתר / קומה 3">
+          <input type="text" id="p-meetingLocation" placeholder="לדוגמה: משרד האתר / קומה 3 / זום">
         </div>
-        <div class="field only-general">
+        <div class="field only-general only-meeting">
           <label>מועד הפצה</label>
           <input type="date" id="p-distributionDate">
           <div class="helptext" id="distribution-date-preview"></div>
@@ -506,7 +499,7 @@
       </div>
 
       <div class="card">
-        <div class="only-general">
+        <div class="only-general only-meeting">
           <h3 style="margin:0 0 4px;">נוכחים</h3>
           <p class="helptext" style="margin-bottom:14px;">רשימת המשתתפים והעתקים שיופיעו בדף השער.</p>
           <div class="field" id="participant-contact-picker-wrap">
@@ -518,11 +511,11 @@
           <div class="field">
             <label>משתתפים</label>
             <div class="chip-input-row">
-              <input type="text" id="participant-name-input" placeholder="שם המשתתף" style="flex:1.3;">
               <input type="text" id="participant-role-input" placeholder="תפקיד / חברה" style="flex:1;">
+              <input type="text" id="participant-name-input" placeholder="שם/שמות (אפשר כמה, מופרדים בפסיק)" style="flex:1.3;">
               <button class="btn btn-ghost btn-sm" onclick="addParticipant()">＋</button>
             </div>
-            <div class="chips" id="participants-list"></div>
+            <div id="participants-list"></div>
           </div>
 
           <div class="field" id="copies-contact-picker-wrap">
@@ -898,7 +891,7 @@ function applySelectedProfile(){
   state.project.meetingType = d.meetingType || '';
   state.project.meetingLocation = d.meetingLocation || '';
   state.project.author = d.author || '';
-  state.project.participants = Array.isArray(d.participants) ? d.participants.map(x=>({ name:x.name||'', role:x.role||'' })) : [];
+  state.project.participants = Array.isArray(d.participants) ? d.participants.map(g=>({ role:g.role||'', names:Array.isArray(g.names)?g.names.slice():[] })) : [];
   state.project.copies = d.copies || '';
   saveDraft();
   fillProjectInputs();
@@ -915,7 +908,7 @@ function saveCurrentAsProfile(){
     meetingType: state.project.meetingType || '',
     meetingLocation: state.project.meetingLocation || '',
     author: state.project.author || '',
-    participants: (state.project.participants||[]).map(x=>({ name:x.name||'', role:x.role||'' })),
+    participants: (state.project.participants||[]).map(g=>({ role:g.role||'', names:(g.names||[]).slice() })),
     copies: state.project.copies || ''
   };
   _profilesCache[id] = { id, name, data, updatedAt: Date.now() };
@@ -1060,8 +1053,11 @@ function projectDetailsTabHtml(projectId){
   const p = loadFolders()[projectId] || {};
   const d = p.defaults || {};
   const lists = distListsForProject(projectId);
-  const participantsHtml = (d.participants||[]).map((pt,idx)=>`
-    <span class="chip">${escapeHtml(pt.name)}${pt.role?' — '+escapeHtml(pt.role):''}<span class="x" onclick="removeProjectDefaultParticipant('${projectId}',${idx})">×</span></span>
+  const participantsHtml = (d.participants||[]).map((g,gi)=>`
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+      <span style="font-weight:700;font-size:12.5px;color:var(--ink-soft);white-space:nowrap;">${escapeHtml(g.role||'ללא תפקיד')}:</span>
+      ${(g.names||[]).map((n,ni)=>`<span class="chip">${escapeHtml(n)}<span class="x" onclick="removeProjectDefaultParticipantName('${projectId}',${gi},${ni})">×</span></span>`).join('')}
+    </div>
   `).join('');
   return `
     <div class="card">
@@ -1098,8 +1094,8 @@ function projectDetailsTabHtml(projectId){
       <div class="field">
         <label>משתתפים – ברירת מחדל (לדוחות סיור כללי)</label>
         <div class="chip-input-row">
-          <input type="text" id="pd-participant-name" placeholder="שם" style="flex:1.3;">
           <input type="text" id="pd-participant-role" placeholder="תפקיד / חברה" style="flex:1;">
+          <input type="text" id="pd-participant-name" placeholder="שם/שמות (אפשר כמה, מופרדים בפסיק)" style="flex:1.3;">
           <button class="btn btn-ghost btn-sm" onclick="addProjectDefaultParticipant('${projectId}')">＋</button>
         </div>
         <div class="chips">${participantsHtml}</div>
@@ -1143,21 +1139,27 @@ async function handleProjectDefaultLogo(e, projectId, field){
 function addProjectDefaultParticipant(projectId){
   const nameInput = document.getElementById('pd-participant-name');
   const roleInput = document.getElementById('pd-participant-role');
-  const name = nameInput.value.trim();
-  if(!name) return;
+  const role = roleInput.value.trim();
+  const names = nameInput.value.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!names.length) return;
   const folders = loadFolders();
   const p = folders[projectId]; if(!p) return;
   p.defaults = p.defaults || {};
   p.defaults.participants = p.defaults.participants || [];
-  p.defaults.participants.push({ name, role: roleInput.value.trim() });
+  let group = p.defaults.participants.find(g=> (g.role||'').trim() === role);
+  if(!group){ group = { role, names: [] }; p.defaults.participants.push(group); }
+  names.forEach(n=>{ if(!group.names.includes(n)) group.names.push(n); });
   saveFolders(folders);
   pushProjectToCloud(projectId);
+  nameInput.value=''; roleInput.value='';
   renderHistoryList();
 }
-function removeProjectDefaultParticipant(projectId, idx){
+function removeProjectDefaultParticipantName(projectId, groupIdx, nameIdx){
   const folders = loadFolders();
   const p = folders[projectId]; if(!p || !p.defaults || !p.defaults.participants) return;
-  p.defaults.participants.splice(idx,1);
+  const group = p.defaults.participants[groupIdx]; if(!group) return;
+  group.names.splice(nameIdx,1);
+  if(group.names.length===0) p.defaults.participants.splice(groupIdx,1);
   saveFolders(folders);
   pushProjectToCloud(projectId);
   renderHistoryList();
@@ -1221,7 +1223,7 @@ function meetingTemplateTabHtml(projectId){
   const rowsHtml = rows.map((r,i)=>`
     <tr>
       <td style="text-align:center;font-weight:700;">${i+1}</td>
-      <td>${escapeHtml(r.description||'—')}</td>
+      <td style="font-size:12.5px;line-height:1.6;">${renderRichMeetingHtml(r.description||'')}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-ghost btn-sm" onclick="moveMeetingTemplateRow('${projectId}',${i},-1)" ${i===0?'disabled':''}>▲</button>
         <button class="btn btn-ghost btn-sm" onclick="moveMeetingTemplateRow('${projectId}',${i},1)" ${i===rows.length-1?'disabled':''}>▼</button>
@@ -1231,9 +1233,9 @@ function meetingTemplateTabHtml(projectId){
   return `
     <div class="card">
       <h3 style="margin:0 0 4px;">שורות קבועות לסיכומי פגישה</h3>
-      <p class="helptext" style="margin-bottom:14px;">הנושאים האלה ייטענו אוטומטית לכל סיכום פגישה חדש שנפתח מהפרויקט הזה (מ"➕ דוח חדש" בתפריט הצדדי).</p>
-      <div class="chip-input-row" style="margin-bottom:14px;">
-        <input type="text" id="mtr-new-description" placeholder="לדוגמה: סטטוס ביצוע" style="flex:1;">
+      <p class="helptext" style="margin-bottom:14px;">הנושאים האלה ייטענו אוטומטית לכל סיכום פגישה חדש שנפתח מהפרויקט הזה (מ"➕ דוח חדש" בתפריט הצדדי). שורה ראשונה = כותרת מודגשת, שורה שמתחילה ב-"-‎" = בולט, שורה שמתחילה ב-"--‎" = תת-בולט.</p>
+      <div style="margin-bottom:14px;">
+        <textarea id="mtr-new-description" placeholder="בטיחות&#10;-תנאים לתחילת עבודה:&#10;--יש להציג כתב מינוי של מנהל הבטיחות" style="min-height:70px;margin-bottom:8px;"></textarea>
         <button class="btn btn-primary btn-sm" onclick="addMeetingTemplateRow('${projectId}')">＋ הוספה</button>
       </div>
       ${rows.length ? `
@@ -1740,8 +1742,9 @@ function addParticipantFromContact(contactId){
   if(!contactId) return;
   const c = _contactsCache[contactId];
   if(!c) return;
-  const roleCombined = [c.role, c.company].filter(Boolean).join(' - ');
-  state.project.participants.push({ name: c.name, role: roleCombined });
+  const roleKey = c.company || c.role || '';
+  state.project.participants = state.project.participants || [];
+  addNameToParticipantGroup(state.project.participants, roleKey, c.name);
   saveDraft();
   renderParticipants();
 }
@@ -1800,7 +1803,7 @@ function migrateOldDraftIfNeeded(hist){
         title: parsed.project.title || '',
         projectName: parsed.project.site || '',
         author: parsed.project.inspector || '',
-        participants: oldParticipants.map(p => typeof p === 'string' ? {name:p, role:''} : p),
+        participants: oldParticipants.map(p => typeof p === 'string' ? {role:'', names:[p]} : {role:p.role||'', names:[p.name||'']}),
         logo: parsed.project.logo || null,
         logoRatio: parsed.project.logoRatio || null
       }));
@@ -2336,7 +2339,7 @@ function applyProjectDefaultsToState(projectId, reportType){
   if(!p) return;
   if(p.name) state.project.projectName = p.name;
   if(reportType==='meeting' && p.meetingTemplateRows && p.meetingTemplateRows.length){
-    state.meetingRows = p.meetingTemplateRows.map(r=>({ id: uid(), description: r.description||'', responsibleName:'', dueDate:'' }));
+    state.meetingRows = p.meetingTemplateRows.map(r=>({ id: uid(), description: r.description||'', action: r.action||'', dueDate:'' }));
   }
   const d = p.defaults;
   if(!d) return;
@@ -2345,7 +2348,7 @@ function applyProjectDefaultsToState(projectId, reportType){
   if(d.author) state.project.author = d.author;
   if((reportType==='safety' || reportType==='meeting') && d.contractor) state.project.contractor = d.contractor;
   if(reportType==='general'){
-    if(d.participants && d.participants.length) state.project.participants = d.participants.map(x=>({ name:x.name||'', role:x.role||'' }));
+    if(d.participants && d.participants.length) state.project.participants = d.participants.map(g=>({ role:g.role||'', names:(g.names||[]).slice() }));
     if(d.copies) state.project.copies = d.copies;
     else if(d.distListId){
       const list = _distListsCache[d.distListId];
@@ -2680,7 +2683,7 @@ function duplicateMeetingReport(reportId){
   // but never the meeting's own date, nor each row's individual due-date (those are specific to the
   // occasion being duplicated, not standing facts).
   const newProject = Object.assign({}, orig.project, { meetingDate: '' });
-  const newRows = (orig.meetingRows||[]).map(r=>({ id: uid(), description: r.description||'', responsibleName: r.responsibleName||'', dueDate: '' }));
+  const newRows = (orig.meetingRows||[]).map(r=>({ id: uid(), description: r.description||'', action: r.action||r.responsibleName||'', dueDate: '' }));
   hist[newId] = { id: newId, project: newProject, defects: [], meetingRows: newRows, folderId: orig.folderId||null, updatedAt: Date.now() };
   saveHistory(hist, newId);
   toast('נוצר סיכום חדש מהעתקה — עדכנו את התאריך');
@@ -2854,24 +2857,41 @@ function deleteReportFromHistory(id){
 }
 
 /* ================= PARTICIPANTS ================= */
+// Shared by the editor's participant chips, the contact-picker, and project-default participants:
+// groups people under a shared role/company label (matching real sign-in sheets, where "ק.ס.מ.ג" or
+// "בקרת איכות" often covers several names at once) instead of one row per person.
+function addNameToParticipantGroup(groups, role, name){
+  role = (role||'').trim();
+  name = (name||'').trim();
+  if(!name) return;
+  let group = groups.find(g => (g.role||'').trim() === role);
+  if(!group){ group = { role, names: [] }; groups.push(group); }
+  if(!group.names.includes(name)) group.names.push(name);
+}
 function addParticipant(){
   const nameInput = document.getElementById('participant-name-input');
   const roleInput = document.getElementById('participant-role-input');
-  const name = nameInput.value.trim();
   const role = roleInput.value.trim();
-  if(!name) return;
-  state.project.participants.push({ name, role });
+  const names = nameInput.value.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!names.length) return;
+  state.project.participants = state.project.participants || [];
+  names.forEach(n=> addNameToParticipantGroup(state.project.participants, role, n));
   nameInput.value=''; roleInput.value='';
   saveDraft(); renderParticipants();
 }
-function removeParticipant(idx){
-  state.project.participants.splice(idx,1);
+function removeParticipantName(groupIdx, nameIdx){
+  const group = state.project.participants[groupIdx]; if(!group) return;
+  group.names.splice(nameIdx,1);
+  if(group.names.length===0) state.project.participants.splice(groupIdx,1);
   saveDraft(); renderParticipants();
 }
 function renderParticipants(){
   const wrap = document.getElementById('participants-list');
-  wrap.innerHTML = state.project.participants.map((p,idx)=>`
-    <span class="chip">${escapeHtml(p.name)}${p.role? ' — '+escapeHtml(p.role):''}<span class="x" onclick="removeParticipant(${idx})">×</span></span>
+  wrap.innerHTML = (state.project.participants||[]).map((g,gi)=>`
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+      <span style="font-weight:700;font-size:12.5px;color:var(--ink-soft);white-space:nowrap;">${escapeHtml(g.role||'ללא תפקיד')}:</span>
+      ${(g.names||[]).map((n,ni)=>`<span class="chip">${escapeHtml(n)}<span class="x" onclick="removeParticipantName(${gi},${ni})">×</span></span>`).join('')}
+    </div>
   `).join('');
   renderParticipantContactPicker();
 }
@@ -3207,33 +3227,42 @@ function renderChecklist(){
 }
 
 /* ================= MEETING SUMMARY TABLE (report type 'meeting') ================= */
+const MEETING_ACTION_CATEGORIES = ['קבלן','פיקוח','מזמין','יועץ','לידיעה'];
 function renderMeetingTable(){
   const container = document.getElementById('meeting-table-container');
   if(!container) return;
   const rows = state.meetingRows || [];
   const contacts = state.folderId ? contactsForProject(state.folderId) : [];
-  const rowsHtml = rows.map((r,i)=>`
+  const rowsHtml = rows.map((r,i)=>{
+    const actionVal = r.action != null ? r.action : (r.responsibleName || '');
+    return `
     <tr>
       <td style="text-align:center;font-weight:700;">${i+1}</td>
-      <td style="min-width:220px;"><textarea style="min-height:44px;" oninput="updateMeetingRowField('${r.id}','description',this.value)">${escapeHtml(r.description||'')}</textarea></td>
-      <td style="min-width:160px;">
-        <input type="text" value="${escapeAttr(r.responsibleName||'')}" placeholder="שם" oninput="updateMeetingRowField('${r.id}','responsibleName',this.value)" style="margin-bottom:4px;">
-        ${contacts.length ? `<select onchange="if(this.value){updateMeetingRowField('${r.id}','responsibleName',this.value); renderMeetingTable();} this.value='';" style="font-size:11px;">
-          <option value="">בחירה מאנשי קשר...</option>
-          ${contacts.map(c=>`<option value="${escapeAttr(c.name)}">${escapeHtml(c.name)}</option>`).join('')}
-        </select>` : ''}
+      <td style="min-width:240px;"><textarea style="min-height:70px;" placeholder="שורה ראשונה = כותרת. שורה שמתחילה ב- הופכת לבולט, שורה שמתחילה ב-- הופכת לתת-בולט." oninput="updateMeetingRowField('${r.id}','description',this.value)">${escapeHtml(r.description||'')}</textarea></td>
+      <td style="min-width:150px;">
+        <input type="text" value="${escapeAttr(actionVal)}" placeholder="לדוגמה: קבלן" oninput="updateMeetingRowField('${r.id}','action',this.value)" style="margin-bottom:4px;">
+        <select onchange="if(this.value){updateMeetingRowField('${r.id}','action',this.value); renderMeetingTable();} this.value='';" style="font-size:11px;">
+          <option value="">בחירה מהירה...</option>
+          <optgroup label="קטגוריה">
+            ${MEETING_ACTION_CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+          </optgroup>
+          ${contacts.length ? `<optgroup label="אנשי קשר">
+            ${contacts.map(c=>`<option value="${escapeAttr(c.name)}">${escapeHtml(c.name)}</option>`).join('')}
+          </optgroup>` : ''}
+        </select>
       </td>
-      <td><input type="date" value="${escapeAttr(r.dueDate||'')}" oninput="updateMeetingRowField('${r.id}','dueDate',this.value)"></td>
+      <td style="min-width:130px;"><input type="date" value="${escapeAttr(r.dueDate||'')}" oninput="updateMeetingRowField('${r.id}','dueDate',this.value)"></td>
       <td><button class="btn btn-danger-ghost btn-sm" onclick="removeMeetingRow('${r.id}')">🗑</button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   container.innerHTML = `
     <div class="card">
       <h3 style="margin:0 0 4px;">תוכן הפגישה</h3>
-      <p class="helptext" style="margin-bottom:14px;">${state.folderId ? 'ניתן לבחור "אחראי" מתוך אנשי הקשר של הפרויקט, או להקליד חופשי.' : 'שייכו את הדוח לפרויקט (בדף השער) כדי לבחור "אחראי" מרשימת אנשי הקשר השמורה.'}</p>
+      <p class="helptext" style="margin-bottom:14px;">בתיאור: השורה הראשונה תוצג ב-PDF ככותרת מודגשת. שורה שמתחילה ב-"-‎" תוצג כבולט, ושורה שמתחילה ב-"--‎" תוצג כתת-בולט מקונן. ב"לפעולה" אפשר להקליד חופשי, או לבחור מהירה קטגוריה קבועה או איש קשר מהפרויקט.</p>
       ${rows.length ? `
       <div style="overflow-x:auto;">
         <table class="simple-table">
-          <thead><tr><th>מס"ד</th><th>תיאור</th><th>אחראי</th><th>תאריך ביצוע</th><th></th></tr></thead>
+          <thead><tr><th>מס"ד</th><th>תיאור</th><th>לפעולה</th><th>מועד</th><th></th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>` : '<div class="empty">אין עדיין שורות בסיכום. לחצו על "הוסף שורה" כדי להתחיל.</div>'}
@@ -3248,7 +3277,7 @@ function updateMeetingRowField(rowId, field, value){
 }
 function addMeetingRow(){
   state.meetingRows = state.meetingRows || [];
-  state.meetingRows.push({ id: uid(), description:'', responsibleName:'', dueDate:'' });
+  state.meetingRows.push({ id: uid(), description:'', action:'', dueDate:'' });
   saveDraft();
   renderMeetingTable();
 }
@@ -3509,6 +3538,56 @@ function onDefectDragEnd(){
   renderDefects();
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Lightweight convention for meeting-summary descriptions (used for both meeting rows and each
+// project's saved template rows): first line = bold title; a line starting with "-" = bullet; a line
+// starting with "--" = nested sub-bullet; any other line = plain paragraph text. This intentionally
+// stops short of a full rich-text editor — see the confirmed plan to revisit only if this isn't enough.
+function parseRichMeetingText(text){
+  const lines = (text||'').split('\n');
+  const blocks = [];
+  let sawFirstNonBlank = false;
+  lines.forEach(raw=>{
+    const trimmed = raw.trim();
+    if(!trimmed) return;
+    if(!sawFirstNonBlank && !trimmed.startsWith('-')){
+      blocks.push({ type:'title', content: trimmed });
+      sawFirstNonBlank = true;
+      return;
+    }
+    sawFirstNonBlank = true;
+    if(trimmed.startsWith('--')) blocks.push({ type:'subbullet', content: trimmed.replace(/^--\s*/,'') });
+    else if(trimmed.startsWith('-')) blocks.push({ type:'bullet', content: trimmed.replace(/^-\s*/,'') });
+    else blocks.push({ type:'text', content: trimmed });
+  });
+  return blocks;
+}
+function renderRichMeetingHtml(text){
+  const blocks = parseRichMeetingText(text);
+  if(!blocks.length) return '<span style="color:#9AA1AC;">—</span>';
+  let html = '', inB1 = false, inB2 = false;
+  const closeB2 = ()=>{ if(inB2){ html += '</ul>'; inB2 = false; } };
+  const closeB1 = ()=>{ closeB2(); if(inB1){ html += '</ul>'; inB1 = false; } };
+  blocks.forEach((b,i)=>{
+    if(b.type==='subbullet'){
+      if(!inB2) html += '<ul style="margin:2px 0 4px;padding-inline-start:16px;list-style-type:circle;">';
+      inB2 = true;
+      html += `<li style="margin-bottom:2px;">${escapeHtml(b.content)}</li>`;
+    }else if(b.type==='bullet'){
+      closeB2();
+      if(!inB1) html += '<ul style="margin:2px 0 6px;padding-inline-start:18px;">';
+      inB1 = true;
+      html += `<li style="margin-bottom:2px;">${escapeHtml(b.content)}</li>`;
+    }else if(b.type==='title'){
+      closeB1();
+      html += `<div style="font-weight:700;text-decoration:underline;margin:${i?'8px':'0'} 0 4px;">${escapeHtml(b.content)}</div>`;
+    }else{
+      closeB1();
+      html += `<div style="margin:4px 0;">${escapeHtml(b.content)}</div>`;
+    }
+  });
+  closeB1();
+  return html;
+}
 function escapeAttr(s){ return escapeHtml(s); }
 
 /* ================= SHARED DATE HELPERS ================= */
@@ -3596,22 +3675,25 @@ function buildMeetingContentPage(){
   const rows = state.meetingRows || [];
   const headerColor = state.project.summaryHeaderColor || '#1B5FAE';
   const rowsHtml = rows.map((r,i)=>{
-    const dueLine = r.dueDate ? (meetingDateLine(parseIsoDateLocal(r.dueDate)) || r.dueDate) : '—';
+    const d = parseIsoDateLocal(r.dueDate);
+    const dueLine = d ? gregDateDisplay(d) : '—';
+    const action = (r.action || r.responsibleName || '').trim();
     return `
     <tr style="background:${i%2? '#FAF9F6':'#ffffff'};">
-      <td style="padding:10px 6px;text-align:center;font-weight:700;border-bottom:1px solid #E4E1D9;width:46px;">${i+1}</td>
-      <td style="padding:10px 8px;text-align:right;border-bottom:1px solid #E4E1D9;font-size:12.5px;line-height:1.5;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(r.description.trim()||'—')}</td>
-      <td style="padding:10px 8px;text-align:right;border-bottom:1px solid #E4E1D9;width:130px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(r.responsibleName.trim()||'—')}</td>
-      <td style="padding:10px 8px;text-align:center;border-bottom:1px solid #E4E1D9;width:100px;white-space:nowrap;">${escapeHtml(dueLine)}</td>
+      <td style="padding:10px 6px;text-align:center;font-weight:700;border-bottom:1px solid #E4E1D9;width:34px;">${i+1}</td>
+      <td style="padding:10px 8px;text-align:right;border-bottom:1px solid #E4E1D9;font-size:12px;line-height:1.5;word-break:break-word;overflow-wrap:break-word;">${renderRichMeetingHtml(r.description)}</td>
+      <td style="padding:10px 6px;text-align:center;border-bottom:1px solid #E4E1D9;width:70px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(action||'—')}</td>
+      <td style="padding:10px 6px;text-align:center;border-bottom:1px solid #E4E1D9;width:75px;white-space:nowrap;">${escapeHtml(dueLine)}</td>
     </tr>`;
   }).join('');
   const tableHtml = `
     <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">
+      <colgroup><col style="width:34px;"><col><col style="width:70px;"><col style="width:75px;"></colgroup>
       <thead><tr style="background:${headerColor};color:#fff;">
-        <th style="padding:9px 6px;font-weight:700;font-size:12px;text-align:center;width:46px;">מס"ד</th>
-        <th style="padding:9px 8px;font-weight:700;font-size:12px;text-align:right;">תיאור</th>
-        <th style="padding:9px 8px;font-weight:700;font-size:12px;text-align:right;width:130px;">אחראי</th>
-        <th style="padding:9px 8px;font-weight:700;font-size:12px;text-align:center;width:100px;">תאריך ביצוע</th>
+        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;">מס"ד</th>
+        <th style="padding:9px 8px;font-weight:700;font-size:11.5px;text-align:right;">תיאור</th>
+        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;">לפעולה</th>
+        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;">מועד</th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>`;
@@ -3793,10 +3875,8 @@ function buildSimpleCoverPage(title){
   return div;
 }
 function buildSafetyCoverPage(){ return buildSimpleCoverPage('דוח סיור בטיחות'); }
-function buildMeetingCoverPage(){ return buildSimpleCoverPage('סיכום פגישה'); }
 function buildCoverPage(){
   if(state.project.reportType === 'safety') return buildSafetyCoverPage();
-  if(state.project.reportType === 'meeting') return buildMeetingCoverPage();
   const div = pageShell();
   const mm2px = PDF_PAGE_W / MM_W;
   const contentW = PDF_PAGE_W - 100; // pageShell horizontal padding is 50px each side
@@ -3823,10 +3903,10 @@ function buildCoverPage(){
 
   let participantsHtml = '';
   if(state.project.participants && state.project.participants.length){
-    const rows = state.project.participants.map(p=>`
+    const rows = state.project.participants.map(g=>`
       <tr>
-        <td style="padding:7px 10px;text-align:center;font-size:13.5px;border:1px solid #C9C6BE;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(p.name)}</td>
-        <td style="padding:7px 10px;text-align:center;font-size:13.5px;border:1px solid #C9C6BE;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(p.role||'—')}</td>
+        <td style="padding:7px 10px;text-align:center;font-size:13.5px;border:1px solid #C9C6BE;word-break:break-word;overflow-wrap:break-word;">${escapeHtml((g.names||[]).join(', ')||'—')}</td>
+        <td style="padding:7px 10px;text-align:center;font-size:13.5px;border:1px solid #C9C6BE;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(g.role||'—')}</td>
       </tr>`).join('');
     participantsHtml = `
       <table style="width:${tableWidthPx}px;margin:56px ${tableIndentPx}px 90px 0;border-collapse:collapse;font-size:13.5px;table-layout:fixed;">
@@ -4377,8 +4457,8 @@ async function exportWord(){
         width:{ size:60, type:WidthType.PERCENTAGE },
         rows:[
           new TableRow({ children:[ plainHeaderCell('נוכחים'), plainHeaderCell('תפקיד / חברה') ] }),
-          ...state.project.participants.map(p=> new TableRow({ children:[
-            plainBodyCell(p.name), plainBodyCell(p.role||'—')
+          ...state.project.participants.map(g=> new TableRow({ children:[
+            plainBodyCell((g.names||[]).join(', ')||'—'), plainBodyCell(g.role||'—')
           ] }))
         ]
       }));

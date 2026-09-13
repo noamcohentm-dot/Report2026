@@ -367,6 +367,11 @@
         <div class="stat-num" id="stat-safety-reports">0</div>
         <div class="stat-label">דוחות בטיחות</div>
       </div>
+      <div class="stat-card stat-green">
+        <div class="stat-icon">📝</div>
+        <div class="stat-num" id="stat-meeting-reports">0</div>
+        <div class="stat-label">סיכומי פגישות</div>
+      </div>
       <div class="stat-card stat-purple">
         <div class="stat-icon">📄</div>
         <div class="stat-num" id="stat-month">0</div>
@@ -2400,15 +2405,19 @@ function renderDashboard(){
   const items = Object.values(hist).filter(it=>!it.trashedAt);
   const now = new Date();
 
-  let monthCount=0, safetyCount=0, tourCount=0;
+  let monthCount=0, safetyCount=0, tourCount=0, meetingCount=0;
   items.forEach(item=>{
-    if(item.project && item.project.reportType === 'safety') safetyCount++; else tourCount++;
+    const t = (item.project && item.project.reportType) || 'general';
+    if(t==='safety') safetyCount++;
+    else if(t==='meeting') meetingCount++;
+    else tourCount++;
     const u = item.updatedAt ? new Date(item.updatedAt) : null;
     if(u && u.getMonth()===now.getMonth() && u.getFullYear()===now.getFullYear()) monthCount++;
   });
 
   document.getElementById('stat-tour-reports').textContent = tourCount;
   document.getElementById('stat-safety-reports').textContent = safetyCount;
+  document.getElementById('stat-meeting-reports').textContent = meetingCount;
   document.getElementById('stat-month').textContent = monthCount;
   document.getElementById('stat-projects').textContent = Object.keys(folders).length;
 
@@ -3258,8 +3267,13 @@ function renderMeetingTable(){
   }).join('');
   container.innerHTML = `
     <div class="card">
-      <h3 style="margin:0 0 4px;">תוכן הפגישה</h3>
-      <p class="helptext" style="margin-bottom:14px;">בתיאור: השורה הראשונה תוצג ב-PDF ככותרת מודגשת. שורה שמתחילה ב-"-‎" תוצג כבולט, ושורה שמתחילה ב-"--‎" תוצג כתת-בולט מקונן. ב"לפעולה" אפשר להקליד חופשי, או לבחור מהירה קטגוריה קבועה או איש קשר מהפרויקט.</p>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;">תוכן הפגישה</h3>
+        <div class="row" style="align-items:center;gap:8px;">
+          <label class="helptext" style="margin:0;">צבע כותרות הטבלה:</label>
+          <input type="color" value="${state.project.summaryHeaderColor||'#1B5FAE'}" onchange="onMeetingHeaderColorChange(this.value)" style="width:44px;height:34px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;padding:2px;background:#fff;">
+        </div>
+      </div>
       ${rows.length ? `
       <div style="overflow-x:auto;">
         <table class="simple-table" style="table-layout:fixed;">
@@ -3275,6 +3289,10 @@ function updateMeetingRowField(rowId, field, value){
   const r = (state.meetingRows||[]).find(x=>x.id===rowId);
   if(!r) return;
   r[field] = value;
+  saveDraft();
+}
+function onMeetingHeaderColorChange(val){
+  state.project.summaryHeaderColor = val;
   saveDraft();
 }
 function addMeetingRow(){
@@ -3681,21 +3699,21 @@ function buildMeetingContentPage(){
     const dueLine = d ? gregDateDisplay(d) : '—';
     const action = (r.action || r.responsibleName || '').trim();
     return `
-    <tr style="background:${i%2? '#FAF9F6':'#ffffff'};">
-      <td style="padding:10px 6px;text-align:center;font-weight:700;border-bottom:1px solid #E4E1D9;width:34px;">${i+1}</td>
-      <td style="padding:10px 8px;text-align:right;border-bottom:1px solid #E4E1D9;font-size:12px;line-height:1.5;word-break:break-word;overflow-wrap:break-word;">${renderRichMeetingHtml(r.description)}</td>
-      <td style="padding:10px 6px;text-align:center;border-bottom:1px solid #E4E1D9;width:70px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(action||'—')}</td>
-      <td style="padding:10px 6px;text-align:center;border-bottom:1px solid #E4E1D9;width:75px;white-space:nowrap;">${escapeHtml(dueLine)}</td>
+    <tr style="background:#ffffff;">
+      <td style="padding:10px 6px;text-align:center;font-weight:700;border:1px solid #000000;width:34px;">${i+1}</td>
+      <td style="padding:10px 8px;text-align:right;border:1px solid #000000;font-size:12px;line-height:1.5;word-break:break-word;overflow-wrap:break-word;">${renderRichMeetingHtml(r.description)}</td>
+      <td style="padding:10px 6px;text-align:center;border:1px solid #000000;width:70px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(action||'—')}</td>
+      <td style="padding:10px 6px;text-align:center;border:1px solid #000000;width:75px;white-space:nowrap;">${escapeHtml(dueLine)}</td>
     </tr>`;
   }).join('');
   const tableHtml = `
-    <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;background:#ffffff;">
       <colgroup><col style="width:34px;"><col><col style="width:70px;"><col style="width:75px;"></colgroup>
       <thead><tr style="background:${headerColor};color:#fff;">
-        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;">מס"ד</th>
-        <th style="padding:9px 8px;font-weight:700;font-size:11.5px;text-align:right;">תיאור</th>
-        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;">לפעולה</th>
-        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;">מועד</th>
+        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;border:1px solid #000000;">מס"ד</th>
+        <th style="padding:9px 8px;font-weight:700;font-size:11.5px;text-align:right;border:1px solid #000000;">תיאור</th>
+        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;border:1px solid #000000;">לפעולה</th>
+        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;border:1px solid #000000;">מועד</th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>`;

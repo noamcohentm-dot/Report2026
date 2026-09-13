@@ -256,7 +256,8 @@
 
   .hidden{display:none !important;}
 
-  .report-type-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;max-width:640px;}
+  .report-type-grid{display:grid;grid-template-columns:1fr;gap:16px;max-width:900px;}
+  @media(min-width:680px){ .report-type-grid{grid-template-columns:repeat(3,1fr);} }
   .report-type-card{background:var(--surface);border:1.5px solid var(--line);border-radius:var(--radius);padding:24px 20px;cursor:pointer;transition:border-color .15s,box-shadow .15s;text-align:center;}
   .report-type-card:hover{border-color:var(--accent);box-shadow:0 4px 16px rgba(23,35,59,.08);}
   .report-type-icon{font-size:30px;margin-bottom:10px;}
@@ -390,7 +391,7 @@
       <div class="report-type-card" onclick="startNewReport('general')">
         <div class="report-type-icon">🗎</div>
         <div class="report-type-title">דוח סיור כללי</div>
-        <div class="report-type-desc">דוח פיקוח / פרוטוקול ישיבה — פורמט חופשי עם ליקויים, סיכום ומסקנות.</div>
+        <div class="report-type-desc">דוח פיקוח — פורמט חופשי עם ליקויים, סיכום ומסקנות.</div>
       </div>
       <div class="report-type-card" onclick="startNewReport('safety')">
         <div class="report-type-icon">🦺</div>
@@ -3238,10 +3239,10 @@ function renderMeetingTable(){
     return `
     <tr>
       <td style="text-align:center;font-weight:700;">${i+1}</td>
-      <td style="min-width:240px;"><textarea style="min-height:70px;" placeholder="שורה ראשונה = כותרת. שורה שמתחילה ב- הופכת לבולט, שורה שמתחילה ב-- הופכת לתת-בולט." oninput="updateMeetingRowField('${r.id}','description',this.value)">${escapeHtml(r.description||'')}</textarea></td>
-      <td style="min-width:150px;">
-        <input type="text" value="${escapeAttr(actionVal)}" placeholder="לדוגמה: קבלן" oninput="updateMeetingRowField('${r.id}','action',this.value)" style="margin-bottom:4px;">
-        <select onchange="if(this.value){updateMeetingRowField('${r.id}','action',this.value); renderMeetingTable();} this.value='';" style="font-size:11px;">
+      <td><textarea style="min-height:70px;width:100%;box-sizing:border-box;" placeholder="שורה ראשונה = כותרת. שורה שמתחילה ב- הופכת לבולט, שורה שמתחילה ב-- הופכת לתת-בולט." oninput="updateMeetingRowField('${r.id}','description',this.value)">${escapeHtml(r.description||'')}</textarea></td>
+      <td>
+        <input type="text" value="${escapeAttr(actionVal)}" placeholder="לדוגמה: קבלן" oninput="updateMeetingRowField('${r.id}','action',this.value)" style="margin-bottom:4px;width:100%;box-sizing:border-box;">
+        <select onchange="if(this.value){updateMeetingRowField('${r.id}','action',this.value); renderMeetingTable();} this.value='';" style="font-size:11px;width:100%;box-sizing:border-box;">
           <option value="">בחירה מהירה...</option>
           <optgroup label="קטגוריה">
             ${MEETING_ACTION_CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
@@ -3251,7 +3252,7 @@ function renderMeetingTable(){
           </optgroup>` : ''}
         </select>
       </td>
-      <td style="min-width:130px;"><input type="date" value="${escapeAttr(r.dueDate||'')}" oninput="updateMeetingRowField('${r.id}','dueDate',this.value)"></td>
+      <td><input type="date" value="${escapeAttr(r.dueDate||'')}" oninput="updateMeetingRowField('${r.id}','dueDate',this.value)" style="width:100%;box-sizing:border-box;"></td>
       <td><button class="btn btn-danger-ghost btn-sm" onclick="removeMeetingRow('${r.id}')">🗑</button></td>
     </tr>`;
   }).join('');
@@ -3261,7 +3262,8 @@ function renderMeetingTable(){
       <p class="helptext" style="margin-bottom:14px;">בתיאור: השורה הראשונה תוצג ב-PDF ככותרת מודגשת. שורה שמתחילה ב-"-‎" תוצג כבולט, ושורה שמתחילה ב-"--‎" תוצג כתת-בולט מקונן. ב"לפעולה" אפשר להקליד חופשי, או לבחור מהירה קטגוריה קבועה או איש קשר מהפרויקט.</p>
       ${rows.length ? `
       <div style="overflow-x:auto;">
-        <table class="simple-table">
+        <table class="simple-table" style="table-layout:fixed;">
+          <colgroup><col style="width:40px;"><col><col style="width:150px;"><col style="width:120px;"><col style="width:44px;"></colgroup>
           <thead><tr><th>מס"ד</th><th>תיאור</th><th>לפעולה</th><th>מועד</th><th></th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>

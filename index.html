@@ -3589,12 +3589,12 @@ function renderRichMeetingHtml(text){
   const closeB1 = ()=>{ closeB2(); if(inB1){ html += '</ul>'; inB1 = false; } };
   blocks.forEach((b,i)=>{
     if(b.type==='subbullet'){
-      if(!inB2) html += '<ul style="margin:2px 0 4px;padding-inline-start:16px;list-style-type:circle;">';
+      if(!inB2) html += '<ul style="margin:2px 0 4px;padding-inline-start:16px;list-style-type:circle;direction:rtl;">';
       inB2 = true;
       html += `<li style="margin-bottom:2px;">${escapeHtml(b.content)}</li>`;
     }else if(b.type==='bullet'){
       closeB2();
-      if(!inB1) html += '<ul style="margin:2px 0 6px;padding-inline-start:18px;">';
+      if(!inB1) html += '<ul style="margin:2px 0 6px;padding-inline-start:18px;direction:rtl;">';
       inB1 = true;
       html += `<li style="margin-bottom:2px;">${escapeHtml(b.content)}</li>`;
     }else if(b.type==='title'){
@@ -3700,26 +3700,24 @@ function buildMeetingContentPage(){
     const action = (r.action || r.responsibleName || '').trim();
     return `
     <tr style="background:#ffffff;">
-      <td style="padding:10px 6px;text-align:center;font-weight:700;border:1px solid #000000;width:34px;">${i+1}</td>
+      <td style="padding:10px 6px;text-align:center;font-weight:700;border:1px solid #000000;white-space:nowrap;">${i+1}</td>
       <td style="padding:10px 8px;text-align:right;border:1px solid #000000;font-size:12px;line-height:1.5;word-break:break-word;overflow-wrap:break-word;">${renderRichMeetingHtml(r.description)}</td>
-      <td style="padding:10px 6px;text-align:center;border:1px solid #000000;width:70px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(action||'—')}</td>
-      <td style="padding:10px 6px;text-align:center;border:1px solid #000000;width:75px;white-space:nowrap;">${escapeHtml(dueLine)}</td>
+      <td style="padding:10px 6px;text-align:center;border:1px solid #000000;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(action||'—')}</td>
+      <td style="padding:10px 6px;text-align:center;border:1px solid #000000;white-space:nowrap;"><span style="display:inline-block;width:100%;text-align:center;direction:ltr;unicode-bidi:embed;">${escapeHtml(dueLine)}</span></td>
     </tr>`;
   }).join('');
   const tableHtml = `
     <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;background:#ffffff;">
-      <colgroup><col style="width:34px;"><col><col style="width:70px;"><col style="width:75px;"></colgroup>
+      <colgroup><col style="width:36px;"><col style="width:434px;"><col style="width:60px;"><col style="width:64px;"></colgroup>
       <thead><tr style="background:${headerColor};color:#fff;">
-        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;border:1px solid #000000;">מס"ד</th>
+        <th style="padding:9px 4px;font-weight:700;font-size:11px;text-align:center;border:1px solid #000000;white-space:nowrap;">מס"ד</th>
         <th style="padding:9px 8px;font-weight:700;font-size:11.5px;text-align:right;border:1px solid #000000;">תיאור</th>
-        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;border:1px solid #000000;">לפעולה</th>
-        <th style="padding:9px 6px;font-weight:700;font-size:11.5px;text-align:center;border:1px solid #000000;">מועד</th>
+        <th style="padding:9px 4px;font-weight:700;font-size:11px;text-align:center;border:1px solid #000000;white-space:nowrap;">לפעולה</th>
+        <th style="padding:9px 4px;font-weight:700;font-size:11px;text-align:center;border:1px solid #000000;white-space:nowrap;">מועד</th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>`;
-  div.innerHTML = `
-    <div class="pdf-avoid-break pdf-text-block" style="font-family:'Heebo',sans-serif;font-weight:700;font-size:16px;margin-bottom:14px;">תוכן הפגישה</div>
-    ${tableHtml}`;
+  div.innerHTML = tableHtml;
   return div;
 }
 async function renderMeetingContentPdf(doc, root){

@@ -14,6 +14,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/docx@9.7.1/dist/index.iife.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
 <!-- Supabase (Auth + Postgres + Storage) — all free-tier friendly, no billing account required. -->
 <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -271,6 +273,11 @@
   .simple-table{width:100%;border-collapse:collapse;font-size:12.5px;}
   .simple-table th{background:var(--bg);text-align:right;padding:8px 10px;font-weight:700;color:var(--ink-soft);border-bottom:1px solid var(--line);white-space:nowrap;}
   .simple-table td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;}
+
+  .meeting-quill-wrap .ql-editor{direction:rtl;text-align:right;font-family:'Heebo',sans-serif;font-size:13px;min-height:110px;}
+  .meeting-quill-wrap .ql-toolbar{border-radius:8px 8px 0 0;background:#FAF9F6;}
+  .meeting-quill-wrap .ql-container{border-radius:0 0 8px 8px;font-family:'Heebo',sans-serif;}
+  .meeting-quill-wrap .ql-editor.ql-blank::before{right:15px;left:auto;font-style:normal;color:#9AA1AC;}
 
   .side-caret{margin-inline-start:auto;font-size:10px;opacity:.6;padding:2px 4px;}
   .sidebar-tree{padding:2px 10px 6px 10px;font-size:12.5px;}
@@ -688,7 +695,7 @@ const CURRENT_KEY = 'siteInspectionCurrentId_v2';
 const OLD_DRAFT_KEY = 'siteInspectionDraft_v1';
 const FOLDERS_KEY = 'siteInspectionFolders_v1';
 let currentFolderId = null; // history screen: null = root view, otherwise the open project's id
-let currentProjectSubTab = 'reports'; // when inside a project: 'reports' | 'contacts' | 'lists' | 'defects' | 'details'
+let currentProjectSubTab = 'reports'; // when inside a project: 'reports' | 'contacts' | 'defects' | 'details'
 let currentContactCategory = 'execution'; // when inside the contacts sub-tab: 'execution' | 'planning' | 'coordination'
 let currentContactSort = 'name'; // 'name' | 'role' | 'company'
 let currentContactSortDir = 'asc'; // 'asc' | 'desc'
@@ -936,29 +943,23 @@ function deleteSelectedProfile(){
   toast('הפרופיל נמחק');
 }
 
-/* ================= PROJECT-SCOPED DATA: contacts, distribution lists =================
-   Both are children of a project (folder), matching the spec: no app-wide pool, everything lives
+/* ================= PROJECT-SCOPED DATA: contacts =================
+   Contacts are children of a project (folder), matching the spec: no app-wide pool, everything lives
    under its project only. Same cache+cloud-sync shape as reports/profiles/projects above. */
 const CONTACTS_TABLE = 'contacts';
-const DIST_LISTS_TABLE = 'distribution_lists';
 const CONTACT_CATEGORIES = [
   { key:'execution', label:'צוות ביצוע' },
   { key:'planning', label:'צוות תכנון' },
   { key:'coordination', label:'תיאומים והיתרים' },
 ];
 let _contactsCache = {};   // id -> {id, projectId, category, name, role, company, phoneOffice, phoneMobile, email}
-let _distListsCache = {};  // id -> {id, projectId, name, contactIds:[...]}
 
 async function loadProjectChildTablesFromCloud(){
   const user = _currentUser;
   if(!user) return;
-  const [c,dl] = await Promise.all([
-    supabaseClient.from(CONTACTS_TABLE).select('*').eq('owner_uid', user.id),
-    supabaseClient.from(DIST_LISTS_TABLE).select('*').eq('owner_uid', user.id),
-  ]);
-  if(c.error) throw c.error; if(dl.error) throw dl.error;
-  _contactsCache = {}; (c.data||[]).forEach(r=>{ _contactsCache[r.id] = { id:r.id, projectId:r.project_id, category:r.category||'execution', name:r.name||'', role:r.role||'', company:r.company||'', phoneOffice:r.phone_office||'', phoneMobile:r.phone_mobile||'', email:r.email||'' }; });
-  _distListsCache = {}; (dl.data||[]).forEach(r=>{ _distListsCache[r.id] = { id:r.id, projectId:r.project_id, name:r.name||'', contactIds:r.contact_ids||[] }; });
+  const { data, error } = await supabaseClient.from(CONTACTS_TABLE).select('*').eq('owner_uid', user.id);
+  if(error) throw error;
+  _contactsCache = {}; (data||[]).forEach(r=>{ _contactsCache[r.id] = { id:r.id, projectId:r.project_id, category:r.category||'execution', name:r.name||'', role:r.role||'', company:r.company||'', phoneOffice:r.phone_office||'', phoneMobile:r.phone_mobile||'', email:r.email||'' }; });
 }
 // category is optional — omit it to get every contact in the project across all 3 categories.
 function contactsForProject(projectId, category){
@@ -972,10 +973,6 @@ function sortContacts(list, sortBy, dir){
   const mult = dir==='desc' ? -1 : 1;
   return list.slice().sort((a,b)=> mult*((a[key]||'').localeCompare((b[key]||''), 'he')) || (a.name||'').localeCompare(b.name||'', 'he'));
 }
-function distListsForProject(projectId){
-  return Object.values(_distListsCache).filter(l=>l.projectId===projectId).sort((a,b)=> (a.name||'').localeCompare(b.name||'', 'he'));
-}
-
 /* ================= DEFECTS REGISTRY (project-wide, computed from existing reports) =================
    No separate table needed — every defect already lives inside its report's saved JSON (already
    cloud-synced), so this is just a derived view: scan the project's own (non-trashed) reports and
@@ -1058,13 +1055,15 @@ function defectDetailHtml(d, num){
 function projectDetailsTabHtml(projectId){
   const p = loadFolders()[projectId] || {};
   const d = p.defaults || {};
-  const lists = distListsForProject(projectId);
-  const participantsHtml = (d.participants||[]).map((g,gi)=>`
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
-      <span style="font-weight:700;font-size:12.5px;color:var(--ink-soft);white-space:nowrap;">${escapeHtml(g.role||'ללא תפקיד')}:</span>
-      ${(g.names||[]).map((n,ni)=>`<span class="chip">${escapeHtml(n)}<span class="x" onclick="removeProjectDefaultParticipantName('${projectId}',${gi},${ni})">×</span></span>`).join('')}
-    </div>
-  `).join('');
+  const changeOrders = p.changeOrders || [];
+  const changeOrdersRows = changeOrders.map((co,i)=>`
+    <tr>
+      <td style="text-align:center;font-weight:700;">${i+1}</td>
+      <td>${escapeHtml(co.description||'—')}</td>
+      <td style="white-space:nowrap;">${escapeHtml(co.cost||'—')}</td>
+      <td style="white-space:nowrap;">${co.date ? escapeHtml(gregDateDisplay(parseIsoDateLocal(co.date))) : '—'}</td>
+      <td><button class="btn btn-danger-ghost btn-sm" onclick="removeProjectChangeOrder('${projectId}',${i})">🗑</button></td>
+    </tr>`).join('');
   return `
     <div class="card">
       <h3 style="margin:0 0 4px;">פרטי בסיס</h3>
@@ -1078,10 +1077,31 @@ function projectDetailsTabHtml(projectId){
         <div class="field"><label>מפקח</label><input type="text" id="pd-supervisor" value="${escapeAttr(p.supervisor||'')}"></div>
         <div class="field"><label>תאריך התחלה</label><input type="date" id="pd-startDate" value="${escapeAttr(p.startDate||'')}"></div>
         <div class="field"><label>תאריך סיום מתוכנן</label><input type="date" id="pd-endDate" value="${escapeAttr(p.endDate||'')}"></div>
+        <div class="field"><label>תאריך סיום בפועל</label><input type="date" id="pd-actualEndDate" value="${escapeAttr(p.actualEndDate||'')}"></div>
         <div class="field"><label>סטטוס הפרויקט</label>
           <select id="pd-status">${['פעיל','מושהה','הושלם'].map(s=>`<option value="${s}" ${(p.status||'פעיל')===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
+        <div class="field"><label>עלות הפרויקט</label><input type="text" id="pd-projectCost" placeholder="₪" value="${escapeAttr(p.projectCost||'')}"></div>
+        <div class="field"><label>עלות פרויקט מעודכנת</label><input type="text" id="pd-updatedProjectCost" placeholder="₪" value="${escapeAttr(p.updatedProjectCost||'')}"></div>
       </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 4px;">הוראות שינוי</h3>
+      <p class="helptext" style="margin-bottom:14px;">כל הוראת שינוי מתווספת בנפרד ומקבלת מספר סידורי אוטומטי — אפשר להזין כמה שצריך.</p>
+      <div class="editor-grid" style="grid-template-columns:2fr 1fr 1fr;margin-bottom:10px;">
+        <div class="field" style="margin-bottom:0;"><label>תיאור</label><input type="text" id="pd-co-description" placeholder="תיאור הוראת השינוי"></div>
+        <div class="field" style="margin-bottom:0;"><label>עלות</label><input type="text" id="pd-co-cost" placeholder="₪"></div>
+        <div class="field" style="margin-bottom:0;"><label>תאריך</label><input type="date" id="pd-co-date"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:14px;" onclick="addProjectChangeOrder('${projectId}')">＋ הוספת הוראת שינוי</button>
+      ${changeOrders.length ? `
+      <div style="overflow-x:auto;">
+        <table class="simple-table">
+          <thead><tr><th>מס"ד</th><th>תיאור</th><th>עלות</th><th>תאריך</th><th></th></tr></thead>
+          <tbody>${changeOrdersRows}</tbody>
+        </table>
+      </div>` : '<div class="empty">אין עדיין הוראות שינוי בפרויקט זה.</div>'}
     </div>
 
     <div class="card">
@@ -1095,36 +1115,28 @@ function projectDetailsTabHtml(projectId){
         </div>
         <input type="file" id="pd-logo-top-input" accept="image/*" class="hidden" onchange="handleProjectDefaultLogo(event,'${projectId}','logoTop')">
       </div>
-      <div class="field"><label>פרטי כותב הדוח (ברירת מחדל)</label><input type="text" id="pd-author" value="${escapeAttr(d.author||'')}"></div>
-      <div class="field"><label>פרטי קבלן (ברירת מחדל, לדוחות בטיחות)</label><input type="text" id="pd-contractor" value="${escapeAttr(d.contractor||'')}"></div>
       <div class="field">
-        <label>משתתפים – ברירת מחדל (לדוחות סיור כללי)</label>
-        <div class="chip-input-row">
-          <input type="text" id="pd-participant-role" placeholder="תפקיד / חברה" style="flex:1;">
-          <input type="text" id="pd-participant-name" placeholder="שם/שמות (אפשר כמה, מופרדים בפסיק)" style="flex:1.3;">
-          <button class="btn btn-ghost btn-sm" onclick="addProjectDefaultParticipant('${projectId}')">＋</button>
+        <label>לוגו תחתון</label>
+        <div class="logo-row">
+          <div class="logo-preview" id="pd-logo-bottom-preview">${d.logoBottom?`<img src="${d.logoBottom}" style="max-width:100%;max-height:100%;">`:'<span style="color:var(--ink-soft);font-size:10px;">אין לוגו</span>'}</div>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pd-logo-bottom-input').click()">העלאת לוגו</button>
         </div>
-        <div class="chips">${participantsHtml}</div>
+        <input type="file" id="pd-logo-bottom-input" accept="image/*" class="hidden" onchange="handleProjectDefaultLogo(event,'${projectId}','logoBottom')">
       </div>
-      <div class="field"><label>העתקים – ברירת מחדל</label><textarea id="pd-copies">${escapeHtml(d.copies||'')}</textarea></div>
-      <div class="field" style="margin-bottom:0;">
-        <label>רשימת תפוצה ברירת מחדל</label>
-        <select id="pd-distListId">
-          <option value="">— ללא —</option>
-          ${lists.map(l=>`<option value="${l.id}" ${d.distListId===l.id?'selected':''}>${escapeHtml(l.name)}</option>`).join('')}
-        </select>
-      </div>
+      <div class="field"><label>פרטי כותב הדוח (ברירת מחדל)</label><input type="text" id="pd-author" value="${escapeAttr(d.author||'')}"></div>
+      <div class="field" style="margin-bottom:0;"><label>פרטי קבלן (ברירת מחדל, לדוחות בטיחות)</label><input type="text" id="pd-contractor" value="${escapeAttr(d.contractor||'')}"></div>
     </div>
 
     <div class="card">
       <h3 style="margin:0 0 4px;">ניהול</h3>
-      <p class="helptext" style="margin-bottom:14px;">שינויים בפרטי הבסיס ובמידע הקבוע (מלבד לוגו ומשתתפים, שנשמרים מיד) נשמרים בלחיצה על הכפתור.</p>
+      <p class="helptext" style="margin-bottom:14px;">שינויים בפרטי הבסיס ובמידע הקבוע (מלבד לוגו והוראות שינוי, שנשמרים מיד) נשמרים בלחיצה על הכפתור.</p>
       <div class="row">
         <button class="btn btn-primary btn-sm" onclick="saveProjectDetails('${projectId}')">💾 שמירת הפרטים</button>
         <button class="btn btn-ghost btn-sm" onclick="exportProjectInfoToExcel('${projectId}')">📤 ייצוא מידע (אקסל)</button>
       </div>
     </div>`;
 }
+
 async function handleProjectDefaultLogo(e, projectId, field){
   const f = e.target.files && e.target.files[0];
   e.target.value = '';
@@ -1142,30 +1154,24 @@ async function handleProjectDefaultLogo(e, projectId, field){
     renderHistoryList();
   }catch(err){ console.error(err); toast('שגיאה בהעלאת הלוגו'); }
 }
-function addProjectDefaultParticipant(projectId){
-  const nameInput = document.getElementById('pd-participant-name');
-  const roleInput = document.getElementById('pd-participant-role');
-  const role = roleInput.value.trim();
-  const names = nameInput.value.split(',').map(s=>s.trim()).filter(Boolean);
-  if(!names.length) return;
+function addProjectChangeOrder(projectId){
+  const descInput = document.getElementById('pd-co-description');
+  const costInput = document.getElementById('pd-co-cost');
+  const dateInput = document.getElementById('pd-co-date');
+  const description = descInput.value.trim();
+  if(!description){ toast('נא להזין תיאור להוראת השינוי'); return; }
   const folders = loadFolders();
   const p = folders[projectId]; if(!p) return;
-  p.defaults = p.defaults || {};
-  p.defaults.participants = p.defaults.participants || [];
-  let group = p.defaults.participants.find(g=> (g.role||'').trim() === role);
-  if(!group){ group = { role, names: [] }; p.defaults.participants.push(group); }
-  names.forEach(n=>{ if(!group.names.includes(n)) group.names.push(n); });
+  p.changeOrders = p.changeOrders || [];
+  p.changeOrders.push({ id: uid(), description, cost: costInput.value.trim(), date: dateInput.value });
   saveFolders(folders);
   pushProjectToCloud(projectId);
-  nameInput.value=''; roleInput.value='';
   renderHistoryList();
 }
-function removeProjectDefaultParticipantName(projectId, groupIdx, nameIdx){
+function removeProjectChangeOrder(projectId, idx){
   const folders = loadFolders();
-  const p = folders[projectId]; if(!p || !p.defaults || !p.defaults.participants) return;
-  const group = p.defaults.participants[groupIdx]; if(!group) return;
-  group.names.splice(nameIdx,1);
-  if(group.names.length===0) p.defaults.participants.splice(groupIdx,1);
+  const p = folders[projectId]; if(!p || !p.changeOrders) return;
+  p.changeOrders.splice(idx,1);
   saveFolders(folders);
   pushProjectToCloud(projectId);
   renderHistoryList();
@@ -1181,18 +1187,20 @@ function saveProjectDetails(projectId){
   p.supervisor = document.getElementById('pd-supervisor').value.trim();
   p.startDate = document.getElementById('pd-startDate').value;
   p.endDate = document.getElementById('pd-endDate').value;
+  p.actualEndDate = document.getElementById('pd-actualEndDate').value;
   p.status = document.getElementById('pd-status').value;
+  p.projectCost = document.getElementById('pd-projectCost').value.trim();
+  p.updatedProjectCost = document.getElementById('pd-updatedProjectCost').value.trim();
   p.defaults = p.defaults || {};
   p.defaults.author = document.getElementById('pd-author').value.trim();
   p.defaults.contractor = document.getElementById('pd-contractor').value.trim();
-  p.defaults.copies = document.getElementById('pd-copies').value;
-  p.defaults.distListId = document.getElementById('pd-distListId').value || null;
   saveFolders(folders);
   pushProjectToCloud(projectId);
   renderHistoryList();
   renderSidebarProjectsTree();
   toast('פרטי הפרויקט נשמרו');
 }
+
 function exportProjectInfoToExcel(projectId){
   if(!window.XLSX){ toast('ספריית אקסל לא נטענה — בדקו חיבור לאינטרנט'); return; }
   const p = loadFolders()[projectId]; if(!p) return;
@@ -1223,14 +1231,19 @@ function exportProjectInfoToExcel(projectId){
 }
 
 /* ---- "שורות קבועות לסיכומי פגישה" tab: standing agenda-item descriptions, per project ---- */
+function meetingDescPreviewHtml(desc){
+  if(!desc) return '—';
+  if(!meetingDescIsHtml(desc)) return renderRichMeetingHtml(desc);
+  return '<div class="ql-snow"><div class="ql-editor" dir="rtl" style="padding:0;height:auto;overflow:visible;font-size:12.5px;">'+desc+'</div></div>';
+}
 function meetingTemplateTabHtml(projectId){
   const p = loadFolders()[projectId] || {};
   const rows = p.meetingTemplateRows || [];
   const rowsHtml = rows.map((r,i)=>`
     <tr>
-      <td style="text-align:center;font-weight:700;">${i+1}</td>
-      <td style="font-size:12.5px;line-height:1.6;">${renderRichMeetingHtml(r.description||'')}</td>
-      <td style="white-space:nowrap;">
+      <td style="text-align:center;font-weight:700;vertical-align:top;">${i+1}</td>
+      <td style="line-height:1.6;">${meetingDescPreviewHtml(r.description||'')}</td>
+      <td style="white-space:nowrap;vertical-align:top;">
         <button class="btn btn-ghost btn-sm" onclick="moveMeetingTemplateRow('${projectId}',${i},-1)" ${i===0?'disabled':''}>▲</button>
         <button class="btn btn-ghost btn-sm" onclick="moveMeetingTemplateRow('${projectId}',${i},1)" ${i===rows.length-1?'disabled':''}>▼</button>
         <button class="btn btn-danger-ghost btn-sm" onclick="removeMeetingTemplateRow('${projectId}',${i})">🗑</button>
@@ -1239,9 +1252,9 @@ function meetingTemplateTabHtml(projectId){
   return `
     <div class="card">
       <h3 style="margin:0 0 4px;">שורות קבועות לסיכומי פגישה</h3>
-      <p class="helptext" style="margin-bottom:14px;">הנושאים האלה ייטענו אוטומטית לכל סיכום פגישה חדש שנפתח מהפרויקט הזה (מ"➕ דוח חדש" בתפריט הצדדי). שורה ראשונה = כותרת מודגשת, שורה שמתחילה ב-"-‎" = בולט, שורה שמתחילה ב-"--‎" = תת-בולט.</p>
+      <p class="helptext" style="margin-bottom:14px;">הנושאים האלה ייטענו אוטומטית לכל סיכום פגישה חדש שנפתח מהפרויקט הזה (מ"➕ דוח חדש" בתפריט הצדדי).</p>
       <div style="margin-bottom:14px;">
-        <textarea id="mtr-new-description" placeholder="בטיחות&#10;-תנאים לתחילת עבודה:&#10;--יש להציג כתב מינוי של מנהל הבטיחות" style="min-height:70px;margin-bottom:8px;"></textarea>
+        <div class="meeting-quill-wrap" style="margin-bottom:8px;"><div id="mtr-quill"></div></div>
         <button class="btn btn-primary btn-sm" onclick="addMeetingTemplateRow('${projectId}')">＋ הוספה</button>
       </div>
       ${rows.length ? `
@@ -1253,10 +1266,21 @@ function meetingTemplateTabHtml(projectId){
       </div>` : '<div class="empty">אין עדיין שורות קבועות בפרויקט זה.</div>'}
     </div>`;
 }
+let _mtrQuill = null;
+function initMeetingTemplateQuill(){
+  _mtrQuill = null;
+  const el = document.getElementById('mtr-quill');
+  if(!el || !window.Quill) return;
+  _mtrQuill = new Quill(el, {
+    theme: 'snow',
+    placeholder: 'תיאור הנושא הקבוע...',
+    modules: { toolbar: [['bold','underline'], [{list:'ordered'},{list:'bullet'}], [{indent:'-1'},{indent:'+1'}]] }
+  });
+}
 function addMeetingTemplateRow(projectId){
-  const input = document.getElementById('mtr-new-description');
-  const description = input.value.trim();
-  if(!description) return;
+  if(!_mtrQuill){ toast('עורך הטקסט לא נטען — בדקו חיבור לאינטרנט'); return; }
+  if(!_mtrQuill.getText().trim()){ toast('נא להזין תיאור'); return; }
+  const description = _mtrQuill.root.innerHTML;
   const folders = loadFolders();
   const p = folders[projectId]; if(!p) return;
   p.meetingTemplateRows = p.meetingTemplateRows || [];
@@ -1297,24 +1321,11 @@ async function deleteContactFromCloud(id){
   try{ const { error } = await supabaseClient.from(CONTACTS_TABLE).delete().eq('id', id); if(error) throw error; }
   catch(err){ console.error(err); toast('שגיאה במחיקת איש הקשר מהענן'); }
 }
-async function pushDistListToCloud(id){
-  const user = _currentUser; const l = _distListsCache[id]; if(!user||!l) return;
-  try{
-    const { error } = await supabaseClient.from(DIST_LISTS_TABLE).upsert({ id, owner_uid:user.id, project_id:l.projectId, name:l.name, contact_ids:l.contactIds });
-    if(error) throw error;
-  }catch(err){ console.error(err); toast('שגיאה בשמירת רשימת התפוצה לענן'); }
-}
-async function deleteDistListFromCloud(id){
-  const user = _currentUser; if(!user) return;
-  try{ const { error } = await supabaseClient.from(DIST_LISTS_TABLE).delete().eq('id', id); if(error) throw error; }
-  catch(err){ console.error(err); toast('שגיאה במחיקת רשימת התפוצה מהענן'); }
-}
-// When a whole project is deleted, its contacts/lists go with it (best-effort; the DB also cascades
-// this automatically via the project_id foreign key, so this local cleanup + cloud calls are mostly
-// for immediate UI consistency without waiting for a fresh reload).
+// When a whole project is deleted, its contacts go with it (best-effort; the DB also cascades this
+// automatically via the project_id foreign key, so this local cleanup + cloud calls are mostly for
+// immediate UI consistency without waiting for a fresh reload).
 function deleteAllProjectChildData(projectId){
   contactsForProject(projectId).forEach(c=>{ delete _contactsCache[c.id]; deleteContactFromCloud(c.id); });
-  distListsForProject(projectId).forEach(l=>{ delete _distListsCache[l.id]; deleteDistListFromCloud(l.id); });
 }
 
 /* ---- project sub-tab switching (history screen, inside an open project) ---- */
@@ -1626,88 +1637,6 @@ function confirmContactsImport(){
   renderHistoryList();
 }
 
-/* ---- DISTRIBUTION LISTS tab ---- */
-function distListsTabHtml(projectId){
-  const lists = distListsForProject(projectId);
-  const contacts = contactsForProject(projectId);
-  const listsHtml = lists.map(l=>{
-    const names = l.contactIds.map(cid=>_contactsCache[cid]).filter(Boolean).map(c=>c.name).join(', ') || '—';
-    return `
-      <div class="card" style="background:#FAF9F6;margin-bottom:12px;">
-        <div class="row" style="justify-content:space-between;">
-          <b>${escapeHtml(l.name)}</b>
-          <div class="row" style="gap:6px;">
-            <button class="btn btn-ghost btn-sm" onclick="editDistListPrompt('${l.id}')">עריכה</button>
-            <button class="btn btn-danger-ghost btn-sm" onclick="deleteDistList('${l.id}')">מחיקה</button>
-          </div>
-        </div>
-        <div class="helptext" style="margin-top:6px;">${escapeHtml(names)}</div>
-        ${state.folderId===projectId ? `<button class="btn btn-ghost btn-sm" style="margin-top:10px;" onclick="loadDistListIntoCopies('${l.id}')">📋 טעינה לשדה "העתקים" בדוח הפתוח</button>` : ''}
-      </div>`;
-  }).join('');
-  return `
-    <div class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-        <h3 style="margin:0;">רשימות תפוצה (${lists.length})</h3>
-        <button class="btn btn-primary btn-sm" onclick="openAddDistListForm('${projectId}')" ${contacts.length?'':'disabled title="הוסיפו קודם אנשי קשר לפרויקט"'}>＋ רשימה חדשה</button>
-      </div>
-      <div id="distlist-form-slot"></div>
-      ${lists.length ? listsHtml : '<div class="empty">אין עדיין רשימות תפוצה בפרויקט זה.</div>'}
-    </div>`;
-}
-function openAddDistListForm(projectId, existingId){
-  const editing = existingId ? _distListsCache[existingId] : null;
-  const contacts = contactsForProject(projectId);
-  const slot = document.getElementById('distlist-form-slot');
-  if(!slot) return;
-  slot.innerHTML = `
-    <div class="card" style="background:#fff;margin-bottom:14px;">
-      <h3 style="margin:0 0 10px;font-size:14px;">${editing?'עריכת רשימת תפוצה':'רשימת תפוצה חדשה'}</h3>
-      <div class="field"><label>שם הרשימה</label><input type="text" id="dlf-name" value="${editing?escapeAttr(editing.name):''}" placeholder="לדוגמה: תפוצת קבלן"></div>
-      <label>אנשי קשר ברשימה</label>
-      <div class="chips" style="margin-bottom:12px;">
-        ${contacts.map(c=>`
-          <label style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:5px 10px;font-size:12.5px;cursor:pointer;">
-            <input type="checkbox" class="dlf-contact-cb" value="${c.id}" ${editing&&editing.contactIds.includes(c.id)?'checked':''}>
-            ${escapeHtml(c.name)}${c.company?' · '+escapeHtml(c.company):''}
-          </label>`).join('')}
-      </div>
-      <div class="row">
-        <button class="btn btn-primary btn-sm" onclick="submitDistListForm('${projectId}','${editing?editing.id:''}')">שמירה</button>
-        <button class="btn btn-ghost btn-sm" onclick="closeDistListForm()">ביטול</button>
-      </div>
-    </div>`;
-}
-function closeDistListForm(){ const slot=document.getElementById('distlist-form-slot'); if(slot) slot.innerHTML=''; }
-function submitDistListForm(projectId, existingId){
-  const name = document.getElementById('dlf-name').value.trim();
-  if(!name){ toast('נא להזין שם לרשימה'); return; }
-  const contactIds = Array.from(document.querySelectorAll('.dlf-contact-cb:checked')).map(cb=>cb.value);
-  const id = existingId || uid();
-  _distListsCache[id] = { id, projectId, name, contactIds };
-  pushDistListToCloud(id);
-  closeDistListForm();
-  renderHistoryList();
-  toast(existingId?'הרשימה עודכנה':'הרשימה נוצרה');
-}
-function editDistListPrompt(id){ const l=_distListsCache[id]; if(!l) return; openAddDistListForm(l.projectId, id); }
-function deleteDistList(id){
-  const l = _distListsCache[id]; if(!l) return;
-  if(!confirm(`למחוק את הרשימה "${l.name}"?`)) return;
-  delete _distListsCache[id]; deleteDistListFromCloud(id); renderHistoryList();
-}
-function loadDistListIntoCopies(id){
-  const l = _distListsCache[id]; if(!l) return;
-  const lines = l.contactIds.map(cid=>_contactsCache[cid]).filter(Boolean).map(c=> c.company? `${c.name} - ${c.company}` : c.name);
-  if(!lines.length){ toast('הרשימה ריקה'); return; }
-  const existingText = (state.project.copies||'').trim();
-  const merged = existingText ? existingText + '\n' + lines.join('\n') : lines.join('\n');
-  state.project.copies = merged;
-  saveDraft();
-  const el = document.getElementById('p-copies'); if(el) el.value = merged;
-  toast('הנמענים נטענו לשדה ההעתקים');
-}
-
 /* ---- report-level project picker + participant contact picker (used in the editor's cover tab) ---- */
 function renderProjectPickerSelect(){
   const sel = document.getElementById('report-project-select');
@@ -1860,7 +1789,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
       _historyCache = {};
       _profilesCache = {};
       _projectsCache = {};
-      _contactsCache = {}; _distListsCache = {};
+      _contactsCache = {};
       state = emptyState();
       appRoot.classList.add('hidden');
       loginScreen.classList.remove('hidden');
@@ -1898,7 +1827,7 @@ async function initAppDataForUser(){
     await loadProjectChildTablesFromCloud();
   }catch(err){
     console.error(err);
-    _contactsCache = {}; _distListsCache = {};
+    _contactsCache = {};
   }
 
   const currentId = localStorage.getItem(CURRENT_KEY);
@@ -2353,17 +2282,6 @@ function applyProjectDefaultsToState(projectId, reportType){
   if(d.logoBottom){ state.project.logoBottom = d.logoBottom; state.project.logoBottomRatio = d.logoBottomRatio; }
   if(d.author) state.project.author = d.author;
   if((reportType==='safety' || reportType==='meeting') && d.contractor) state.project.contractor = d.contractor;
-  if(reportType==='general'){
-    if(d.participants && d.participants.length) state.project.participants = d.participants.map(g=>({ role:g.role||'', names:(g.names||[]).slice() }));
-    if(d.copies) state.project.copies = d.copies;
-    else if(d.distListId){
-      const list = _distListsCache[d.distListId];
-      if(list){
-        const lines = list.contactIds.map(cid=>_contactsCache[cid]).filter(Boolean).map(c=> c.company?`${c.name} - ${c.company}`:c.name);
-        if(lines.length) state.project.copies = lines.join('\n');
-      }
-    }
-  }
 }
 function resetAll(){ showNewReportTypeScreen(); }
 function goToDefects(){ showEditorTab('defects'); }
@@ -2458,7 +2376,8 @@ async function loadProjectsFromCloud(){
       id: row.id, name: row.name, createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
       contractNumber: row.contract_number || '', client: row.client || '', mainContractor: row.main_contractor || '',
       projectManager: row.project_manager || '', supervisor: row.supervisor || '',
-      startDate: row.start_date || '', endDate: row.end_date || '', status: row.status || 'פעיל',
+      startDate: row.start_date || '', endDate: row.end_date || '', actualEndDate: row.actual_end_date || '', status: row.status || 'פעיל',
+      projectCost: row.project_cost || '', updatedProjectCost: row.updated_project_cost || '', changeOrders: row.change_orders || [],
       defaults: row.defaults || {},
       meetingTemplateRows: row.meeting_template_rows || [],
     };
@@ -2480,7 +2399,8 @@ async function pushProjectToCloud(id){
       id, owner_uid:user.id, name:p.name,
       contract_number: p.contractNumber||null, client: p.client||null, main_contractor: p.mainContractor||null,
       project_manager: p.projectManager||null, supervisor: p.supervisor||null,
-      start_date: p.startDate||null, end_date: p.endDate||null, status: p.status||'פעיל',
+      start_date: p.startDate||null, end_date: p.endDate||null, actual_end_date: p.actualEndDate||null, status: p.status||'פעיל',
+      project_cost: p.projectCost||null, updated_project_cost: p.updatedProjectCost||null, change_orders: p.changeOrders||[],
       defaults: p.defaults||{},
       meeting_template_rows: p.meetingTemplateRows||[],
     });
@@ -2602,7 +2522,6 @@ function renderSidebarProjectsTree(){
         <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='reports' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','reports')">📄 דוחות</div>
         <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='defects' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','defects')">⚠️ ליקויים</div>
         <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='contacts' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','contacts')">👥 אנשי קשר</div>
-        <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='lists' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','lists')">📨 רשימות תפוצה</div>
         <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='details' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','details')">⚙️ פרטי פרויקט</div>
         <div class="sidebar-tree-leaf ${isActiveProject && currentProjectSubTab==='meetingTemplate' ? 'active':''}" onclick="sidebarOpenProjectSubTab('${p.id}','meetingTemplate')">📋 שורות קבועות לסיכומי פגישה</div>
       </div>` : '';
@@ -2715,7 +2634,6 @@ function renderHistoryList(){
       ['reports','🗎 דוחות'],
       ['defects','⚠️ ליקויים'],
       ['contacts','👤 אנשי קשר'],
-      ['lists','📋 רשימות תפוצה'],
       ['details','⚙️ פרטי פרויקט'],
       ['meetingTemplate','📋 שורות קבועות לסיכומי פגישה'],
     ];
@@ -2728,7 +2646,6 @@ function renderHistoryList(){
 
     let bodyHtml = '';
     if(currentProjectSubTab==='contacts') bodyHtml = contactsTabHtml(currentFolderId);
-    else if(currentProjectSubTab==='lists') bodyHtml = distListsTabHtml(currentFolderId);
     else if(currentProjectSubTab==='defects') bodyHtml = defectsTabHtml(currentFolderId);
     else if(currentProjectSubTab==='details') bodyHtml = projectDetailsTabHtml(currentFolderId);
     else if(currentProjectSubTab==='meetingTemplate') bodyHtml = meetingTemplateTabHtml(currentFolderId);
@@ -2752,6 +2669,7 @@ function renderHistoryList(){
       <div id="project-subtab-body">${bodyHtml}</div>
     `;
     if(currentProjectSubTab==='reports') attachHistDragHandlers();
+    if(currentProjectSubTab==='meetingTemplate') initMeetingTemplateQuill();
     renderSidebarProjectsTree();
     return;
   }
@@ -3238,6 +3156,7 @@ function renderChecklist(){
 
 /* ================= MEETING SUMMARY TABLE (report type 'meeting') ================= */
 const MEETING_ACTION_CATEGORIES = ['קבלן','פיקוח','מזמין','יועץ','לידיעה'];
+let _meetingQuillInstances = {}; // rowId -> live Quill instance (rebuilt on every full render)
 function renderMeetingTable(){
   const container = document.getElementById('meeting-table-container');
   if(!container) return;
@@ -3247,12 +3166,12 @@ function renderMeetingTable(){
     const actionVal = r.action != null ? r.action : (r.responsibleName || '');
     return `
     <tr>
-      <td style="text-align:center;font-weight:700;">${i+1}</td>
-      <td><textarea style="min-height:70px;width:100%;box-sizing:border-box;" placeholder="שורה ראשונה = כותרת. שורה שמתחילה ב- הופכת לבולט, שורה שמתחילה ב-- הופכת לתת-בולט." oninput="updateMeetingRowField('${r.id}','description',this.value)">${escapeHtml(r.description||'')}</textarea></td>
-      <td>
-        <input type="text" value="${escapeAttr(actionVal)}" placeholder="לדוגמה: קבלן" oninput="updateMeetingRowField('${r.id}','action',this.value)" style="margin-bottom:4px;width:100%;box-sizing:border-box;">
-        <select onchange="if(this.value){updateMeetingRowField('${r.id}','action',this.value); renderMeetingTable();} this.value='';" style="font-size:11px;width:100%;box-sizing:border-box;">
-          <option value="">בחירה מהירה...</option>
+      <td style="text-align:center;font-weight:700;vertical-align:top;">${i+1}</td>
+      <td style="vertical-align:top;"><div class="meeting-quill-wrap"><div id="quill-editor-${r.id}"></div></div></td>
+      <td style="vertical-align:top;">
+        <textarea placeholder="שם בכל שורה" oninput="updateMeetingRowField('${r.id}','action',this.value)" style="min-height:110px;width:100%;box-sizing:border-box;font-size:12px;margin-bottom:4px;">${escapeHtml(actionVal)}</textarea>
+        <select onchange="if(this.value){ appendMeetingActionLine('${r.id}', this.value); } this.value='';" style="font-size:11px;width:100%;box-sizing:border-box;">
+          <option value="">הוספת שורה...</option>
           <optgroup label="קטגוריה">
             ${MEETING_ACTION_CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
           </optgroup>
@@ -3261,8 +3180,8 @@ function renderMeetingTable(){
           </optgroup>` : ''}
         </select>
       </td>
-      <td><input type="date" value="${escapeAttr(r.dueDate||'')}" oninput="updateMeetingRowField('${r.id}','dueDate',this.value)" style="width:100%;box-sizing:border-box;"></td>
-      <td><button class="btn btn-danger-ghost btn-sm" onclick="removeMeetingRow('${r.id}')">🗑</button></td>
+      <td style="vertical-align:top;"><input type="date" value="${escapeAttr(r.dueDate||'')}" oninput="updateMeetingRowField('${r.id}','dueDate',this.value)" style="width:100%;box-sizing:border-box;"></td>
+      <td style="vertical-align:top;"><button class="btn btn-danger-ghost btn-sm" onclick="removeMeetingRow('${r.id}')">🗑</button></td>
     </tr>`;
   }).join('');
   container.innerHTML = `
@@ -3276,14 +3195,45 @@ function renderMeetingTable(){
       </div>
       ${rows.length ? `
       <div style="overflow-x:auto;">
-        <table class="simple-table" style="table-layout:fixed;">
-          <colgroup><col style="width:40px;"><col><col style="width:150px;"><col style="width:120px;"><col style="width:44px;"></colgroup>
+        <table class="simple-table" style="table-layout:fixed;min-width:640px;">
+          <colgroup><col style="width:36px;"><col><col style="width:92px;"><col style="width:112px;"><col style="width:44px;"></colgroup>
           <thead><tr><th>מס"ד</th><th>תיאור</th><th>לפעולה</th><th>מועד</th><th></th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>` : '<div class="empty">אין עדיין שורות בסיכום. לחצו על "הוסף שורה" כדי להתחיל.</div>'}
       <button class="btn btn-primary btn-sm" style="margin-top:14px;" onclick="addMeetingRow()">＋ הוסף שורה</button>
     </div>`;
+
+  // Quill needs its host element to exist in the DOM, so editors are created after innerHTML is set.
+  _meetingQuillInstances = {};
+  if(!window.Quill){ toast('עורך הטקסט לא נטען — בדקו חיבור לאינטרנט'); return; }
+  rows.forEach(r=>{
+    const el = document.getElementById('quill-editor-'+r.id);
+    if(!el) return;
+    const quill = new Quill(el, {
+      theme: 'snow',
+      placeholder: 'תיאור הנושא...',
+      modules: { toolbar: [['bold','underline'], [{list:'ordered'},{list:'bullet'}], [{indent:'-1'},{indent:'+1'}]] }
+    });
+    if(r.description){
+      if(meetingDescIsHtml(r.description)) quill.clipboard.dangerouslyPasteHTML(r.description);
+      else quill.setText(r.description);
+    }
+    quill.on('text-change', (delta, oldDelta, source)=>{
+      if(source !== 'user') return; // ignore the programmatic load of the saved content
+      r.description = quill.getText().trim() ? quill.root.innerHTML : '';
+      saveDraft();
+    });
+    _meetingQuillInstances[r.id] = quill;
+  });
+}
+function appendMeetingActionLine(rowId, val){
+  const r = (state.meetingRows||[]).find(x=>x.id===rowId);
+  if(!r || !val) return;
+  const existing = String(r.action != null ? r.action : (r.responsibleName||'')).trim();
+  r.action = existing ? existing + '\n' + val : val;
+  saveDraft();
+  renderMeetingTable();
 }
 function updateMeetingRowField(rowId, field, value){
   const r = (state.meetingRows||[]).find(x=>x.id===rowId);
@@ -3690,6 +3640,42 @@ let FOOTER_RESERVE_MM = 21;   // recomputed per export — see exportPDF()
 let CONTENT_MM = MM_H - HEADER_RESERVE_MM - FOOTER_RESERVE_MM;
 const PDF_PAGE_W = 794;
 
+// Converts Quill's HTML into plain divs with manual bullet/number characters. The PDF engine
+// (html2canvas) can't place native <ol>/<ul> markers on the right side in RTL, so real list elements
+// are avoided: every list item becomes a right-aligned paragraph with its marker as text.
+function meetingDescIsHtml(s){ return /<(p|ol|ul|li|strong|b|u|em|br|div)\b/i.test(s||''); }
+function convertQuillHtmlForPdf(html){
+  if(!html || !String(html).trim()) return '<span style="color:#9AA1AC;">—</span>';
+  if(!meetingDescIsHtml(html)) return renderRichMeetingHtml(html);
+  const wrap = document.createElement('div');
+  wrap.innerHTML = html;
+  let out = '';
+  const counters = {};
+  Array.from(wrap.children).forEach(el=>{
+    const tag = el.tagName;
+    if(tag==='OL' || tag==='UL'){
+      const ordered = tag==='OL';
+      Array.from(el.children).forEach(li=>{
+        if(li.tagName!=='LI') return;
+        const m = (li.className||'').match(/ql-indent-(\d+)/);
+        const indent = m ? parseInt(m[1],10) : 0;
+        Object.keys(counters).forEach(k=>{ if(parseInt(k,10) > indent) delete counters[k]; });
+        let marker;
+        if(ordered){ counters[indent] = (counters[indent]||0) + 1; marker = counters[indent] + '.'; }
+        else marker = indent>0 ? '○' : '•';
+        out += '<div style="text-align:right;margin:2px 0;padding-right:'+(6+indent*18)+'px;line-height:1.5;">'
+             + '<span style="display:inline-block;direction:ltr;min-width:14px;margin-left:6px;">'+marker+'</span>'
+             + li.innerHTML + '</div>';
+      });
+      Object.keys(counters).forEach(k=>delete counters[k]);
+    }else{
+      const inner = el.innerHTML;
+      if(!inner || inner==='<br>') out += '<div style="height:6px;"></div>';
+      else out += '<div style="text-align:right;margin:3px 0;line-height:1.5;">'+inner+'</div>';
+    }
+  });
+  return out || '<span style="color:#9AA1AC;">—</span>';
+}
 function buildMeetingContentPage(){
   const div = pageShell();
   const rows = state.meetingRows || [];
@@ -3697,23 +3683,24 @@ function buildMeetingContentPage(){
   const rowsHtml = rows.map((r,i)=>{
     const d = parseIsoDateLocal(r.dueDate);
     const dueLine = d ? gregDateDisplay(d) : '—';
-    const action = (r.action || r.responsibleName || '').trim();
+    const actionLines = String(r.action || r.responsibleName || '').split('\n').map(s=>s.trim()).filter(Boolean);
+    const actionHtml = actionLines.length ? actionLines.map(s=>'<div style="margin:2px 0;">'+escapeHtml(s)+'</div>').join('') : '—';
     return `
     <tr style="background:#ffffff;">
-      <td style="padding:10px 6px;text-align:center;font-weight:700;border:1px solid #000000;white-space:nowrap;">${i+1}</td>
-      <td style="padding:10px 8px;text-align:right;border:1px solid #000000;font-size:12px;line-height:1.5;word-break:break-word;overflow-wrap:break-word;">${renderRichMeetingHtml(r.description)}</td>
-      <td style="padding:10px 6px;text-align:center;border:1px solid #000000;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(action||'—')}</td>
-      <td style="padding:10px 6px;text-align:center;border:1px solid #000000;white-space:nowrap;"><span style="display:inline-block;width:100%;text-align:center;direction:ltr;unicode-bidi:embed;">${escapeHtml(dueLine)}</span></td>
+      <td style="padding:10px 2px;text-align:center;font-weight:700;border:1px solid #000000;white-space:nowrap;vertical-align:top;">${i+1}</td>
+      <td style="padding:10px 8px;text-align:right;border:1px solid #000000;font-size:12px;line-height:1.5;word-break:break-word;overflow-wrap:break-word;vertical-align:top;">${convertQuillHtmlForPdf(r.description)}</td>
+      <td style="padding:10px 3px;text-align:center;border:1px solid #000000;font-size:12px;word-break:break-word;overflow-wrap:break-word;vertical-align:top;">${actionHtml}</td>
+      <td style="padding:10px 2px;border:1px solid #000000;white-space:nowrap;direction:ltr;text-align:center;font-size:12px;vertical-align:top;">${escapeHtml(dueLine)}</td>
     </tr>`;
   }).join('');
   const tableHtml = `
     <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;background:#ffffff;">
-      <colgroup><col style="width:36px;"><col style="width:434px;"><col style="width:60px;"><col style="width:64px;"></colgroup>
+      <colgroup><col style="width:30px;"><col style="width:440px;"><col style="width:56px;"><col style="width:84px;"></colgroup>
       <thead><tr style="background:${headerColor};color:#fff;">
-        <th style="padding:9px 4px;font-weight:700;font-size:11px;text-align:center;border:1px solid #000000;white-space:nowrap;">מס"ד</th>
+        <th style="padding:9px 2px;font-weight:700;font-size:11px;text-align:center;border:1px solid #000000;white-space:nowrap;">מס"ד</th>
         <th style="padding:9px 8px;font-weight:700;font-size:11.5px;text-align:right;border:1px solid #000000;">תיאור</th>
-        <th style="padding:9px 4px;font-weight:700;font-size:11px;text-align:center;border:1px solid #000000;white-space:nowrap;">לפעולה</th>
-        <th style="padding:9px 4px;font-weight:700;font-size:11px;text-align:center;border:1px solid #000000;white-space:nowrap;">מועד</th>
+        <th style="padding:9px 2px;font-weight:700;font-size:11px;text-align:center;border:1px solid #000000;white-space:nowrap;">לפעולה</th>
+        <th style="padding:9px 2px;font-weight:700;font-size:11px;text-align:center;border:1px solid #000000;white-space:nowrap;">מועד</th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>`;
